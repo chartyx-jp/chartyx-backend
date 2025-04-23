@@ -1,11 +1,11 @@
 import yfinance as yf
-from .csv_handler import CSVHandler
+from .parquet_handler import ParquetHandler
 from utils.utils import Utils
 import pandas as pd
 from typing import Union, List, Dict
 from django.conf import settings
 
-class YahooFetcher(CSVHandler):
+class YahooFetcher(ParquetHandler):
     def __init__(self, start: str, end: str, interval: str = "1d", directory: str =settings.RAW_DATA_DIR ) -> None:
         """
         Yahoo Finance から株価データを取得するFetcherクラス。
@@ -47,7 +47,7 @@ class YahooFetcher(CSVHandler):
             info: dict = ticker_obj.info
             company_name: str = info.get("longName", "N/A")
             safe_name: str = Utils.safe_filename_component(company_name)
-            filename: str = f"{ticker}_{safe_name}_{self.__interval}_{self.__start}_to_{self.__end}.csv"
+            filename: str = f"{ticker}_{safe_name}_{self.__interval}_{self.__start}_to_{self.__end}.parquet"
 
             self.save(df, filename)
             result[ticker] = df
@@ -74,7 +74,7 @@ class YahooFetcher(CSVHandler):
         for ticker in tickers:
             ticker_df: pd.DataFrame = df[ticker].copy()
             ticker_df.reset_index(inplace=True)
-            filename: str = f"{ticker}_{self.__interval}_{self.__start}_to_{self.__end}.csv"
+            filename: str = f"{ticker}_{self.__interval}_{self.__start}_to_{self.__end}.parquet"
             self.save(ticker_df, filename)
             print(f"Saved: {filename}")
 

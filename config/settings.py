@@ -137,7 +137,8 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # データ格納ディレクトリ
 STOCK_DATA_DIR = BASE_DIR / 'stock_data'
 RAW_DATA_DIR = STOCK_DATA_DIR / 'raw_data'
-PROCCESSED_DATA_DIR = STOCK_DATA_DIR / 'processed_data'
+PROCESSED_DATA_DIR = STOCK_DATA_DIR / 'processed_data'
+LEARNING_DATA_DIR = STOCK_DATA_DIR / 'learning_data'
 
 # ログ出力ディレクトリ
 LOG_DIR = BASE_DIR / 'logs'
