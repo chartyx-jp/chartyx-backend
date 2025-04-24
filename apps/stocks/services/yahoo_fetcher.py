@@ -1,5 +1,5 @@
 import yfinance as yf
-from .parquet_handler import ParquetHandler
+from apps.stocks.services.parquet_handler import ParquetHandler
 from utils.utils import Utils
 import pandas as pd
 from typing import Union, List, Dict
@@ -36,7 +36,7 @@ class YahooFetcher(ParquetHandler):
         result: Dict[str, pd.DataFrame] = {}
 
         for ticker in tickers:
-            print(f"Fetching: {ticker}")
+            self.log.info(f"Fetching: {ticker}")
             ticker_obj: yf.Ticker = yf.Ticker(ticker)
 
             df: pd.DataFrame = ticker_obj.history(
@@ -72,9 +72,15 @@ class YahooFetcher(ParquetHandler):
         )
 
         for ticker in tickers:
+            #銘柄名取得
+            ticker_obj: yf.Ticker = yf.Ticker(ticker)
+            info: dict = ticker_obj.info
+            company_name: str = info.get("longName", "N/A")
+            safe_name: str = Utils.safe_filename_component(company_name)
+
             ticker_df: pd.DataFrame = df[ticker].copy()
             ticker_df.reset_index(inplace=True)
-            filename: str = f"{ticker}_{self.__interval}_{self.__start}_to_{self.__end}.parquet"
+            filename: str = f"{ticker}_{safe_name}_{self.__interval}_{self.__start}_to_{self.__end}.parquet"
             self.save(ticker_df, filename)
-            print(f"Saved: {filename}")
+            self.log.info(f"Saved: {filename}")
 
