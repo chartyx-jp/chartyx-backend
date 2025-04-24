@@ -11,6 +11,9 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 from pathlib import Path
+import logging
+import sys
+
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -131,8 +134,6 @@ STATIC_URL = 'static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 
-# BASE_DIR は既に定義されている
-# BASE_DIR = Path(__file__).resolve().parent.parent
 
 # データ格納ディレクトリ
 STOCK_DATA_DIR = BASE_DIR / 'stock_data'
@@ -140,8 +141,47 @@ RAW_DATA_DIR = STOCK_DATA_DIR / 'raw_data'
 PROCESSED_DATA_DIR = STOCK_DATA_DIR / 'processed_data'
 LEARNING_DATA_DIR = STOCK_DATA_DIR / 'learning_data'
 
+# モデル格納ディレクトリ
+MODEL_DIR = BASE_DIR / 'apps' / 'ai' / 'models' / 'stock_price_regressor.pkl'
+
 # ログ出力ディレクトリ
 LOG_DIR = BASE_DIR / 'logs'
 
-# ノートブック（AI/分析用）
+# ログ設定
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'default': {
+            'format': '[{asctime}] {levelname} {name} | {module}.{funcName}:{lineno} | {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'level': 'DEBUG',  # 全部表示
+            'class': 'logging.StreamHandler',
+            'stream': sys.stdout,
+            'formatter': 'default',
+        },
+        'error_file': {
+            'level': 'ERROR',  # ERROR以上のみ記録
+            'class': 'logging.FileHandler',
+            'filename': str(LOG_DIR / 'error.log'),
+            'formatter': 'default',
+        },
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console', 'error_file'],
+            'level': 'INFO',
+            'propagate': True,
+        },
+        'apps': {
+            'handlers': ['console', 'error_file'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+    },
+}# ノートブック（AI/分析用）
 NOTEBOOK_DIR = BASE_DIR / 'notebooks'
