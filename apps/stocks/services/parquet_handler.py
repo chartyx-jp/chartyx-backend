@@ -6,14 +6,15 @@ from logs.logger import LogHelper
 from django.conf import settings
 
 class ParquetHandler:
-    def __init__(self, directory: str = settings.RAW_DATA_DIR) -> None:
+    def __init__(self, read_directory: str = settings.RAW_DATA_DIR, save_directory: str = settings.PROCESSED_DATA_DIR) -> None:
         """
         parquetの読み書きを行う基底クラス。
         ディレクトリが存在しなければ作成する。
         """
 
         self.__logger: logging.Logger = LogHelper.get_logger(self)
-        self.__directory = str(directory)
+        self.__save_directory: str = save_directory
+        self.__read_directory: str = read_directory
         os.makedirs(self.__directory, exist_ok=True)
 
     def save(self, df: pd.DataFrame, filename: str) -> None:
@@ -24,7 +25,7 @@ class ParquetHandler:
         - df: 保存するDataFrame
         - filename: ファイル名（拡張子付き）
         """
-        path = os.path.join(self.__directory, filename)
+        path = os.path.join(self.__save_directory, filename)
         df.to_parquet(path, index=False)
         self.log.info(f"Saved: {path}")
 
@@ -39,9 +40,9 @@ class ParquetHandler:
         - int: 削除したファイルの数
         """
         deleted = 0
-        for filename in os.listdir(self.__directory):
+        for filename in os.listdir(self.__read_directory):
             if filename.endswith(suffix):
-                path = os.path.join(self.__directory, filename)
+                path = os.path.join(self.__read_directory, filename)
                 try:
                     os.remove(path)
                     deleted += 1
@@ -61,7 +62,7 @@ class ParquetHandler:
         Returns:
         - pd.DataFrame: 読み込まれたデータ
         """
-        path = os.path.join(self.__directory, filename)
+        path = os.path.join(self.__read_directory, filename)
         return pd.read_parquet(path)
 
     def save_multiple(self, df_dict: Dict[str, pd.DataFrame], suffix: str = "1d") -> None:
@@ -87,16 +88,16 @@ class ParquetHandler:
         - pd.DataFrame: すべてのファイルを結合したDataFrame
         """
         all_dfs = []
-        for filename in os.listdir(self.__directory):
+        for filename in os.listdir(self.__read_directory):
             if filename.endswith(suffix):
-                path = os.path.join(self.__directory, filename)
+                path = os.path.join(self.__read_directory, filename)
                 try:
                     df = pd.read_parquet(path)
                     all_dfs.append(df)
                 except Exception as e:
                     self.log.error(f" 読み込み失敗: {filename} - {e}")
         if not all_dfs:
-            raise FileNotFoundError(f"No files with suffix '{suffix}' in {self.__directory}")
+            raise FileNotFoundError(f"No files with suffix '{suffix}' in {self.__read_directory}")
         return pd.concat(all_dfs, ignore_index=True)
     
     @property

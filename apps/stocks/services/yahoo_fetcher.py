@@ -1,4 +1,5 @@
 import yfinance as yf
+from datetime import date
 from apps.stocks.services.parquet_handler import ParquetHandler
 from utils.utils import Utils
 import pandas as pd
@@ -6,7 +7,7 @@ from typing import Union, List, Dict
 from django.conf import settings
 
 class YahooFetcher(ParquetHandler):
-    def __init__(self, start: str, end: str, interval: str = "1d", directory: str =settings.RAW_DATA_DIR ) -> None:
+    def __init__(self, start: str, end: str = date.today().strftime("%Y-%m-%d"), interval: str = "1d",read_directory: str = settings.PROCESSED_DATA_DIR, save_directory: str = settings.RAW_DATA_DIR ) -> None:
         """
         Yahoo Finance から株価データを取得するFetcherクラス。
 
@@ -16,7 +17,7 @@ class YahooFetcher(ParquetHandler):
         - interval: 取得間隔 ("1d", "1wk", "1mo")
         - directory: 保存先ディレクトリ
         """
-        super().__init__(directory)
+        super().__init__(read_directory=read_directory, save_directory=save_directory)
         Utils.validate_interval(interval)
         self.__start: str = start
         self.__end: str = end
@@ -83,4 +84,37 @@ class YahooFetcher(ParquetHandler):
             filename: str = f"{ticker}_{safe_name}_{self.__interval}_{self.__start}_to_{self.__end}.parquet"
             self.save(ticker_df, filename)
             self.log.info(f"Saved: {filename}")
+
+
+    def extract_japan_tickers(self, filename: str) -> list[str]:
+        """
+        日本株CSVのDataFrameからティッカーコードを抽出（.Tを付与）
+
+        Parameters:
+        - filename: 日本株銘柄情報のCSVファイル名
+
+        Returns:
+        - List[str]: ["1301.T", "1332.T", ...]
+        """
+        jp_df = pd.read_csv(settings.LEARNING_DATA_DIR / filename)
+
+        return [
+            str(code).zfill(4) + ".T"
+            for code in (jp_df["コード"])
+        ]
+
+
+    def extract_us_tickers(self, filename: str) -> list[str]:
+        """
+        米国株CSVのDataFrameからティッカーコードを抽出
+
+        Parameters:
+        - ファイル名: US株銘柄情報のCSVファイル名
+
+        Returns:
+        - List[str]: ["AAPL", "MSFT", "GOOGL", ...]
+        """
+
+        us_df = pd.read_csv(settings.LEARNING_DATA_DIR / filename)
+        return [symbol for symbol in us_df["Symbol"] if pd.notna(symbol)]
 
