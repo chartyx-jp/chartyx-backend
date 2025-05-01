@@ -9,12 +9,12 @@ class StockAIPredictor(BaseAIModel):
     - 単一レコードの入力特徴量に対して予測値を返す。
     """
 
-    def __init__(self):
+    def __init__(self, model_name: str, *args, ** kwargs) -> None:
         """
         モデル予測器の初期化。
         自動的に保存済みモデルをロードする。
         """
-        super().__init__()
+        super().__init__(model_name=model_name,*args, **kwargs)
         self.load_model()
 
     def predict(self, input_features: Dict[str, float]) -> float:

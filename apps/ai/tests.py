@@ -1,62 +1,138 @@
-from django.test import TestCase
+import os
+import django
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "chartyx_backend.settings")
+django.setup()
 
-# Create your tests here.
-
-from utils.utils import Utils
-Utils.setup_django()
-
-from django.conf import settings
-from apps.stocks.services.yahoo_fetcher import YahooFetcher
+from datetime import date, timedelta
+import random
 import pandas as pd
+import yfinance as yf
+from apps.common.app_initializer import DjangoAppInitializer as initializer
+from apps.stocks.services.yahoo_fetcher import YahooFetcher
+from apps.stocks.services.parquet_handler import ParquetHandler
+from apps.ai.inference.booster_predictor import StockAIBoosterPredictor
+from apps.ai.models import PredictionLog
 
-def extract_japan_tickers(jp_df: pd.DataFrame) -> list[str]:
+
+def test_predict_accuracy_on_latest_data(
+    model_name: str,
+    jp_ticker_csv: str,
+    us_ticker_csv: str,
+    sample_size: int = 5
+):
     """
-    日本株CSVのDataFrameからティッカーコードを抽出（.Tを付与）
-
-    Parameters:
-    - jp_df: 日本株銘柄情報のDataFrame（"コード", "市場・商品区分" を含む）
-
-    Returns:
-    - List[str]: ["1301.T", "1332.T", ...]
+    ランダムな銘柄に対して、最新Parquetデータで予測を行い、
+    当日の実株価と比較してDBに1件ずつ保存するテスト関数。
     """
-    return [
-        str(code).zfill(4) + ".T"
-        for code in (jp_df["コード"])
-    ]
+    today = date.today()
+    start_date = today.strftime("%Y-%m-%d")
+    end_date = today.strftime("%Y-%m-%d")
+
+    # ① 銘柄取得
+    fetcher = YahooFetcher(start=start_date, end=end_date, interval="1d")
+    jp_tickers = fetcher.extract_japan_tickers(jp_ticker_csv)
+    us_tickers = fetcher.extract_us_tickers(us_ticker_csv)
+    all_tickers = {**jp_tickers, **us_tickers}
+    selected_tickers = random.sample(list(all_tickers.keys()), k=sample_size)
+
+    # ② 株価取得（当日の実株価）
+    raw_data = yf.download(
+        tickers=selected_tickers,
+        start=start_date,
+        end=end_date,
+        interval="1d",
+        group_by="ticker",
+        auto_adjust=False,
+        threads=True
+    )
+
+    # ③ 初期化
+    predictor = StockAIBoosterPredictor(model_name)
+    parquet_handler = ParquetHandler()
+    saved_count = 0
+
+    # ④ 推論ループ
+    for ticker in selected_tickers:
+        try:
+            df_latest = parquet_handler.get_latest_row_by_ticker(ticker)
+
+            if df_latest is None:
+                print(f"⚠️ Parquetなし: {ticker}")
+                continue
+
+            if isinstance(df_latest, pd.Series):
+                df_latest = pd.DataFrame([df_latest])
+
+            if df_latest.empty:
+                print(f"⚠️ 空データ: {ticker}")
+                continue
+
+            pred = predictor.predict_from_df(df_latest)
+
+            try:
+                actual = raw_data[ticker]["Close"].iloc[-1]
+            except Exception as e:
+                print(f"⚠️ 株価取得失敗: {ticker} - {e}")
+                continue
+
+            diff = abs(pred - actual)
+            sector = df_latest["Sector"].values[0] if "Sector" in df_latest.columns else None
+
+            log = PredictionLog(
+                date=today,
+                ticker=ticker,
+                predicted_price=pred,
+                actual_price=actual,
+                error=diff,
+                sector=sector,
+                model_version=model_name
+            )
+
+            try:
+                log.save()
+                saved_count += 1
+                print(f"✅ {ticker}: Pred={pred:.2f} | Actual={actual:.2f} | Error={diff:.2f}")
+            except Exception as e:
+                print(f"❌ DB保存失敗: {ticker} - {e}")
+                continue
+
+        except Exception as e:
+            print(f"❌ 予測失敗: {ticker} - {e}")
+            continue
+
+    print(f"\n📝 {saved_count} 件を PredictionLog に保存しました（{sample_size} 件中）")
 
 
-def extract_us_tickers(us_df: pd.DataFrame) -> list[str]:
-    """
-    米国株CSVのDataFrameからティッカーコードを抽出
-
-    Parameters:
-    - us_df: 米国株銘柄情報のDataFrame（"Symbol" を含む）
-
-    Returns:
-    - List[str]: ["AAPL", "MSFT", "GOOGL", ...]
-    """
-    return [symbol for symbol in us_df["Symbol"] if pd.notna(symbol)]
 
 
+def test_last_raw():
+
+    today = date.today()
+    start_date = today.strftime("%Y-%m-%d")
+    end_date = today.strftime("%Y-%m-%d")
+
+    fetcher = YahooFetcher(start=start_date, end=end_date, interval="1d")
+    predictor = StockAIBoosterPredictor("chartyx_v2.json")
+    parquet = ParquetHandler()
+    jp_tickers = fetcher.extract_japan_tickers("data_2025_03.csv")
+    us_tickers = fetcher.extract_us_tickers("constituents.csv")
+    all_tickers = {**jp_tickers, **us_tickers}
+    selected_tickers = random.sample(list(all_tickers.keys()), k=1)
+
+    for ticker in selected_tickers:
+        df = parquet.get_latest_row_by_ticker(ticker)
+        if isinstance(df, pd.Series):
+            print(f"df {df} ここではまだあるよね")
+            df = pd.DataFrame([df])
+        X = predictor.split_features_for_prediction(df)
+        print("X",X)
+    
+# === 実行 ===
 if __name__ == "__main__":
-    from datetime import date
-    # ティッカー抽出
-    jp_df = pd.read_csv(settings.LEARNING_DATA_DIR / "data_2025_03.csv")
-    us_df = pd.read_csv(settings.LEARNING_DATA_DIR / "constituents.csv")
-
-    jp_tickers = extract_japan_tickers(jp_df)
-    us_tickers = extract_us_tickers(us_df)
-
-    all_tickers = jp_tickers + us_tickers
-    print(f"✅ 抽出完了: {len(all_tickers)} 銘柄")
-
-    # 取得期間・間隔設定
-    start = "1970-01-01"
-    end = date.today().strftime("%Y-%m-%d")
-    interval = "1d"
-
-    # フェッチャー初期化 & 一括取得
-    fetcher = YahooFetcher(start=start, end=end, interval=interval)
-    fetcher.download_multiple_and_save(all_tickers)
-
-    print("✅ 全ティッカーのデータ取得＆保存完了")
+    test_predict_accuracy_on_latest_data(
+        model_name="chartyx_v2.json",
+        jp_ticker_csv="data_2025_03.csv",
+        us_ticker_csv="constituents.csv",
+        sample_size=100  # ← 少数でまずテスト
+    )
+    # test_last_raw()

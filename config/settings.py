@@ -142,7 +142,7 @@ PROCESSED_DATA_DIR = STOCK_DATA_DIR / 'processed_data'
 LEARNING_DATA_DIR = STOCK_DATA_DIR / 'learning_data'
 
 # モデル格納ディレクトリ
-MODEL_DIR = BASE_DIR / 'apps' / 'ai' / 'models' / 'stock_price_regressor.pkl'
+MODEL_DIR = BASE_DIR / 'apps' / 'ai' / 'ai_models' 
 
 # ログ出力ディレクトリ
 LOG_DIR = BASE_DIR / 'logs'
@@ -183,5 +183,6 @@ LOGGING = {
             'propagate': False,
         },
     },
-}# ノートブック（AI/分析用）
+}
+# ノートブック（AI/分析用）
 NOTEBOOK_DIR = BASE_DIR / 'notebooks'
