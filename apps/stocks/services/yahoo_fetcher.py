@@ -3,6 +3,7 @@ import glob
 import pandas as pd
 import numpy as np
 import os
+import random
 from tqdm import tqdm
 from datetime import date,timedelta
 from apps.common.app_initializer import DjangoAppInitializer
@@ -33,37 +34,26 @@ class YahooFetcher(DjangoAppInitializer):
         self.__generator = BasicFeatureGeneratorV2()
         self.__parquet_handler = ParquetHandler(directory=directory, batch_size=20)
 
-    def fetch(self, tickers: Union[str, List[str]]) -> Dict[str, pd.DataFrame]:
+    def fetch(self,tickers: list[str]) -> pd.DataFrame:
         """
-        指定されたティッカーの株価データを取得し、CSVとして保存する。
+        指定ティッカーの当日株価（終値）をyfinanceで取得。
 
         Parameters:
-        - tickers: ティッカー名（単一 or リスト）
+        - tickers: ティッカーリスト
+        - date_: yyyy-mm-dd形式の日付（例：today）
 
         Returns:
-        - dict: {ticker: DataFrame}
+        - pd.DataFrame: yfinanceの結果（MultiIndex）
         """
-        tickers = Utils.ensure_list(tickers)
-        result: Dict[str, pd.DataFrame] = {}
-
-        for ticker in tickers:
-            self.log.info(f"Fetching: {ticker}")
-            ticker_obj: yf.Ticker = yf.Ticker(ticker)
-
-            df: pd.DataFrame = ticker_obj.history(
-                start=self.__start, end=self.__end, interval=self.__interval
-            )
-            df.reset_index(inplace=True)
-
-            info: dict = ticker_obj.info
-            company_name: str = info.get("longName", "N/A")
-            safe_name: str = Utils.safe_filename_component(company_name)
-            filename: str = f"{ticker}_{safe_name}.parquet"
-
-            self.__parquet_handler.save(df, filename)
-            result[ticker] = df
-
-        return result
+        return yf.download(
+            tickers=tickers,
+            start=self.__start,
+            end=self.__end,
+            interval="1d",
+            group_by="ticker",
+            auto_adjust=False,
+            threads=True
+        )
     
 
     def download_and_transform(self, tickers: Union[list[str], dict[str, str]]) -> None:
@@ -135,7 +125,7 @@ class YahooFetcher(DjangoAppInitializer):
         - 重複排除後、新規n行のみをParquetに追記。
         """
         today = date.today()
-        start = (today - timedelta(days=7)).strftime("%Y-%m-%d")
+        start = (today - timedelta(days=10)).strftime("%Y-%m-%d")
         end = today.strftime("%Y-%m-%d")
 
         if isinstance(tickers, dict):
@@ -236,3 +226,31 @@ class YahooFetcher(DjangoAppInitializer):
             )
             if pd.notna(symbol)
         }
+
+
+    def get_tickers_list(
+        self,
+        jp_ticker_csv: str,
+        us_ticker_csv: str
+    ) -> List[str]:
+        """
+        日本および米国のティッカーを結合してリスト化する。
+        """
+        jp_tickers = self.extract_japan_tickers(jp_ticker_csv)
+        us_tickers = self.extract_us_tickers(us_ticker_csv)
+        all_tickers = {**jp_tickers, **us_tickers}
+        return list(all_tickers.keys())
+    
+
+    def get_tickers_list_random(
+        self,
+        jp_ticker_csv: str,
+        us_ticker_csv: str,
+        sample_size: int = 5
+    ) -> List[str]:
+        """
+        日本および米国のティッカーからランダムに指定数選ぶ。
+        """
+
+        all_tickers = self.get_tickers_list(jp_ticker_csv, us_ticker_csv)
+        return random.sample(all_tickers, k=sample_size)

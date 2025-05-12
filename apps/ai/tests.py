@@ -30,21 +30,10 @@ def test_predict_accuracy_on_latest_data(
 
     # ① 銘柄取得
     fetcher = YahooFetcher(start=start_date, end=end_date, interval="1d")
-    jp_tickers = fetcher.extract_japan_tickers(jp_ticker_csv)
-    us_tickers = fetcher.extract_us_tickers(us_ticker_csv)
-    all_tickers = {**jp_tickers, **us_tickers}
-    selected_tickers = random.sample(list(all_tickers.keys()), k=sample_size)
+    selected_tickers = fetcher.get_tickers_list_random(jp_ticker_csv, us_ticker_csv, sample_size)
 
     # ② 株価取得（当日の実株価）
-    raw_data = yf.download(
-        tickers=selected_tickers,
-        start=start_date,
-        end=end_date,
-        interval="1d",
-        group_by="ticker",
-        auto_adjust=False,
-        threads=True
-    )
+    raw_data = fetcher.fetch(selected_tickers)
 
     # ③ 初期化
     predictor = StockAIBoosterPredictor(model_name)
@@ -55,17 +44,6 @@ def test_predict_accuracy_on_latest_data(
     for ticker in selected_tickers:
         try:
             df_latest = parquet_handler.get_latest_row_by_ticker(ticker)
-
-            if df_latest is None:
-                print(f"⚠️ Parquetなし: {ticker}")
-                continue
-
-            if isinstance(df_latest, pd.Series):
-                df_latest = pd.DataFrame([df_latest])
-
-            if df_latest.empty:
-                print(f"⚠️ 空データ: {ticker}")
-                continue
 
             pred = predictor.predict_from_df(df_latest)
 
@@ -133,6 +111,6 @@ if __name__ == "__main__":
         model_name="chartyx_v2.json",
         jp_ticker_csv="data_2025_03.csv",
         us_ticker_csv="constituents.csv",
-        sample_size=100  # ← 少数でまずテスト
+        sample_size=1  # ← 少数でまずテスト
     )
     # test_last_raw()

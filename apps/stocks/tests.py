@@ -190,4 +190,4 @@ def test_get_file_by_ticker():
         print(f"Ticker: {ticker} | Data: {df["Date"]}")
         
 if __name__ == "__main__":
-    test_get_file_by_ticker()
+    test_parquet_update()
