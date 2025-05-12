@@ -101,6 +101,10 @@ class BasicFeatureGeneratorV2(FeatureGeneratorBase, DjangoAppInitializer):
 
     @staticmethod
     def split(df: pd.DataFrame):
+
+        if isinstance(df, pd.Series):
+            df = pd.DataFrame([df])
+
         df = df.copy()
         df = df.dropna(subset=["Target"])
 

@@ -189,13 +189,14 @@ class ParquetHandler(DjangoAppInitializer):
             return None
 
         if len(matching) > 1:
-            print(f"[WARN] 複数ファイルが見つかりました for {ticker_base} → {matching}. 最初の1件を使用。")
+            self.log.info(f"[WARN] 複数ファイルが見つかりました for {ticker_base} → {matching}. 最初の1件を使用。")
 
         return os.path.join(self.__directory, matching[0])
 
-    def get_latest_row_by_ticker(self, ticker_base: str) -> Optional[pd.Series]:
+    def get_latest_row_by_ticker(self, ticker_base: str ,n:int = 1) -> Optional[pd.Series]:
         """
-        指定された ticker_base に一致するParquetファイルの最終行（最新日付の行）を返す。
+        - n < 10 の場合 → 該当の1行（Series）を返す（通常推論用）
+        - n>=10 の場合 → 最新n行のDataFrameを返す（SHAP・分析用）
         """
         path = self.get_file_by_ticker(ticker_base)  # フルパスを取得
         if not path:
@@ -207,6 +208,8 @@ class ParquetHandler(DjangoAppInitializer):
 
         if df_sorted.empty:
             return None
-
-        # return df_sorted.tail(5)
-        return df_sorted.iloc[-1]  # 最終行（最新日）
+        
+        if n >= 10:
+            return df_sorted.iloc[-n:]
+        else:
+            return df_sorted.iloc[-n]  # 最終行（最新日）
