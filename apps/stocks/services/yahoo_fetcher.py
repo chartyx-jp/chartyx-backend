@@ -1,9 +1,7 @@
 import yfinance as yf
 import glob
 import pandas as pd
-import numpy as np
-import os
-import random
+from pathlib import Path
 from tqdm import tqdm
 from datetime import date,timedelta
 from apps.common.app_initializer import DjangoAppInitializer
@@ -52,7 +50,7 @@ class YahooFetcher(DjangoAppInitializer):
         self.__raw_columns = ["Date"] + self.__price_columns
         self.__parquet_handler = ParquetHandler(directory=directory, batch_size=20)
 
-    def fetch(self,tickers: list[str]) -> pd.DataFrame:
+    def fetch(self,tickers: list[str] = None) -> pd.DataFrame:
         """
         指定ティッカーの当日株価（終値）をyfinanceで取得。
 
@@ -69,10 +67,9 @@ class YahooFetcher(DjangoAppInitializer):
             end=self.__end,
             interval=self.__interval,
             group_by="ticker",
-            auto_adjust=False,
+            auto_adjust=False
             )
     
-
     def download(self) -> None:
         """
         指定されたティッカーの株価データを取得し、Parquet形式で保存する。
@@ -83,10 +80,12 @@ class YahooFetcher(DjangoAppInitializer):
         all_tickers_grouped = self.get_all_tickers_grouped()
 
 
+
         for country, tickers in all_tickers_grouped.items():
             # 株価データを一括取得
             tickers_list = list(tickers.keys())
             raw_data = self.fetch(tickers_list)
+
 
             self.log.info(f" 取得完了: {country} - {len(tickers_list)} 銘柄")
 
@@ -147,7 +146,7 @@ class YahooFetcher(DjangoAppInitializer):
             self.log.info(f" 取得完了: {country} - {len(tickers_list)} 銘柄")
             for ticker in tqdm(tickers_list, desc=f"{country}のデータをアップデートしています。"):
                 try:
-                    parquet_path = self.__parquet_handler.get_file_by_ticker(ticker)
+                    parquet_path:Path = self.__parquet_handler.get_file_by_ticker(ticker)
 
                     if not parquet_path:
                         self.log.warning(f"{ticker}のファイルが見つかりません。スキップ。")
@@ -177,8 +176,8 @@ class YahooFetcher(DjangoAppInitializer):
                         .drop_duplicates(subset="Date", keep="last") \
                         .sort_values("Date")
 
-                    self.__parquet_handler.save(df_updated, os.path.basename(parquet_path), folder_name=self.COUNTRY_META[country]["folder"]) 
-                    self.log.info(f"Updated {os.path.basename(parquet_path)}: +{len(df_merged)} rows")
+                    self.__parquet_handler.save(df_updated, parquet_path.name, folder_name=self.COUNTRY_META[country]["folder"]) 
+                    self.log.info(f"Updated {parquet_path.name}: +{len(df_merged)} rows")
 
                 except Exception as e:
                     self.log.error(f"[{ticker}] Failed to update: {e}")

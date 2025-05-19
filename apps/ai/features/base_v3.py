@@ -11,8 +11,6 @@ class BasicFeatureGeneratorV3(FeatureGeneratorBase, DjangoAppInitializer):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
 
-        self.__inputpath_handler = ParquetHandler(directory=settings.RAW_DATA_DIR/"japan")
-        self.__outputpath_handler = ParquetHandler(directory=settings.PROCESSED_DATA_DIR)
 
 
     def transform(self, df: pd.DataFrame) -> pd.DataFrame:

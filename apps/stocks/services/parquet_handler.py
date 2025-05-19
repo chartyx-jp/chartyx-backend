@@ -1,29 +1,37 @@
-import os
 import shutil
 import pandas as pd
+from pathlib import Path
 from apps.common.utils import Utils
 from tqdm import tqdm
 from typing import Dict, Optional
 from apps.common.app_initializer import DjangoAppInitializer
 from django.conf import settings
 
+
 class ParquetHandler(DjangoAppInitializer):
-    def __init__(self, directory: str = settings.RAW_DATA_DIR, batch_size: int = 20, *args, ** kwargs) -> None:
+    def __init__(self, directory: Path = settings.RAW_DATA_DIR, batch_size: int = 20, *args, ** kwargs) -> None:
         super().__init__(*args, **kwargs)
         """
         parquetの読み書きを行う基底クラス。
         ディレクトリが存在しなければ作成する。
         """
 
-        os.makedirs(directory, exist_ok=True)
+        directory.mkdir(parents=True, exist_ok=True)
 
 
-        self.__directory: str = directory
+        self.__directory: Path = directory
         self.__batch_size = batch_size
-        self.__all_files = [f for f in os.listdir(directory) if f.endswith(".parquet")]
+        self.__all_files = [f for f in self.__directory.iterdir()
+                        if f.is_file() and f.suffix == ".parquet"]
         self.__current_batch_index = 0
 
 
+    def refresh_all_files(self) -> None:
+        """
+        指定ディレクトリ内のすべてのparquetファイルを更新する。
+        """
+        self.__all_files = [f for f in self.__directory.iterdir()
+                        if f.is_file() and f.suffix == ".parquet"]
 
     def save(self, df: pd.DataFrame, filename: str, folder_name: str = None) -> None:
         """
@@ -32,13 +40,25 @@ class ParquetHandler(DjangoAppInitializer):
         Parameters:
         - df: 保存するDataFrame
         - filename: ファイル名（拡張子付き）
+        - folder_name: サブディレクトリ名（任意）
         """
-        if folder_name:
-            filename = os.path.join(folder_name, filename)
+        # ベースパスの組み立て
+        try:
+            path = self.__directory
 
-        path = os.path.join(self.__directory, filename)
-        os.makedirs(os.path.dirname(path), exist_ok=True)  # ディレクトリが存在しない場合は作成
-        df.to_parquet(path, index=False,compression="snappy")
+            if folder_name:
+                path = path / folder_name
+
+            path.mkdir(parents=True, exist_ok=True)  # ディレクトリが存在しない場合は作成
+
+            full_path = path / filename  # ファイルパスを結合
+            df.to_parquet(full_path, index=False, compression="snappy")
+        except Exception as e:
+            self.log.error(f" 保存失敗: {filename} - {e}")
+            raise e    
+        finally:
+            self.refresh_all_files()  # 保存後にファイルリストを更新
+        
 
     def view_parquet_preview(self, filename: str) -> pd.DataFrame:
         """
@@ -46,18 +66,14 @@ class ParquetHandler(DjangoAppInitializer):
 
         Parameters:
         - filename (str): 読み込むParquetファイル名
-        - n (int): 表示する行数（デフォルト5）
 
         Returns:
         - pd.DataFrame: 指定ファイルのプレビュー
         """
-        import os
-        import pandas as pd
+        full_path = self.__directory / filename  # パス結合は / で
 
-        full_path = os.path.join(self.__directory, filename)
-
-        if not os.path.exists(full_path):
-            raise FileNotFoundError(f"ファイルが見つかりません: {full_path}")
+        if not full_path.exists():  # Pathオブジェクトで存在確認
+            raise FileNotFoundError(f"ファイルが存在しません: {full_path}")
 
         df = pd.read_parquet(full_path)
         pd.set_option('display.max_columns', None)
@@ -75,47 +91,44 @@ class ParquetHandler(DjangoAppInitializer):
         Returns:
         - int: 削除したファイルの数
         """
-        deleted = 0
-        for filename in os.listdir(self.__directory):
-            if filename.endswith(suffix):
-                path = os.path.join(self.__directory, filename)
-                try:
-                    os.remove(path)
-                    deleted += 1
-                    self.log.info(f" 削除: {filename}")
-                except Exception as e:
-                    self.log.error(f" 削除失敗: {filename} - {e}")
-        self.log.info(f" 削除完了: {deleted} ファイル")
-        return deleted
-    
+        try:
+            deleted = 0
+
+            for file in self.__all_files:
+                if file.is_file() and file.suffix(suffix):
+                    try:
+                        file.unlink()  # ← Pathオブジェクトの削除メソッド
+                        deleted += 1
+                        self.log.info(f" 削除: {file.name}")
+                    except Exception as e:
+                        self.log.error(f" 削除失敗: {file.name} - {e}")
+            
+
+            self.log.info(f" 削除完了: {deleted} ファイル")
+            return deleted
+        except Exception as e:
+            self.log.error(f" 削除失敗: {e}")
+            raise e
+        finally:
+            self.refresh_all_files()
 
     def load(self, filename: str) -> pd.DataFrame:
         """
-        parquetファイルを読み込み、DataFrameとして返す。
+        __all_files の中から指定ファイルを探して読み込む。
 
         Parameters:
-        - filename: 読み込むparquetファイル名
+        - filename: 読み込むファイル名（ファイル名のみ）
 
         Returns:
-        - pd.DataFrame: 読み込まれたデータ
+        - pd.DataFrame: 読み込んだデータ
         """
-        path = os.path.join(self.__directory, filename)
-        return pd.read_parquet(path)
+        match = next((f for f in self.__all_files if f.name == filename), None)
+
+        if not match:
+            raise FileNotFoundError(f"指定されたファイルが見つかりません: {filename}")
+
+        return pd.read_parquet(match)
     
-
-    def save_multiple(self, df_dict: Dict[str, pd.DataFrame], suffix: str = "1d") -> None:
-        """
-        複数のDataFrameを一括で保存する。
-
-        Parameters:
-        - df_dict: {ticker: DataFrame} の辞書
-        - suffix: 出力ファイル名に使う接尾辞（例: '1d'）
-        """
-        for ticker, df in df_dict.items():
-            filename = f"{ticker}_{suffix}.parquet"
-            self.save(df, filename)
-
-
     def load_all(self, suffix: str = ".parquet") -> pd.DataFrame:
         """
         指定ディレクトリ内のparquetファイルを一括読み込み。
@@ -127,20 +140,21 @@ class ParquetHandler(DjangoAppInitializer):
         - pd.DataFrame: すべてのファイルを結合したDataFrame
         """
         all_dfs = []
-        for filename in os.listdir(self.__directory):
-            if filename.endswith(suffix):
-                path = os.path.join(self.__directory, filename)
+
+        for file in self.__all_files:
+            if file.is_file() and file.suffix == suffix:
                 try:
-                    df = pd.read_parquet(path)
+                    df = pd.read_parquet(file)
                     all_dfs.append(df)
                 except Exception as e:
-                    self.log.error(f" 読み込み失敗: {filename} - {e}")
+                    self.log.error(f" 読み込み失敗: {file.name} - {e}")
+
         if not all_dfs:
-            raise FileNotFoundError(f"No files with suffix '{suffix}' in {self.__directory}")
+            raise FileNotFoundError(f" '{suffix}' は {self.__directory} に存在しません")
+
         return pd.concat(all_dfs, ignore_index=True)
 
-
-    def get_next_batch_filenames(self) -> list[str]:
+    def get_next_batch_filenames(self) -> list[Path]:
             start = self.__current_batch_index * self.__batch_size
             end = start + self.__batch_size
             batch_files = self.__all_files[start:end]
@@ -151,18 +165,28 @@ class ParquetHandler(DjangoAppInitializer):
             return self.__current_batch_index * self.__batch_size < len(self.__all_files)
 
     def load_batch(self, filenames: list[str]) -> pd.DataFrame:
+        """
+        指定されたファイル名リストに対して、対応するParquetファイルを読み込んで結合する。
+
+        Parameters:
+        - filenames: 読み込むファイル名のリスト（文字列）
+
+        Returns:
+        - pd.DataFrame: 結合されたDataFrame
+        """
         all_dfs = []
+
         for filename in filenames:
-            path = os.path.join(self.__directory, filename)
             try:
-                df = pd.read_parquet(path)
+                df = self.load(filename)
                 all_dfs.append(df)
             except Exception as e:
                 self.log.info(f" 読み込み失敗: {filename} - {e}")
+
         if not all_dfs:
             raise FileNotFoundError("バッチに読み込めるファイルが存在しません")
+
         return pd.concat(all_dfs, ignore_index=True)
-    
     
     def retransform_all_files(self, generator) -> None:
         """
@@ -185,7 +209,7 @@ class ParquetHandler(DjangoAppInitializer):
             
 
 
-    def get_file_by_ticker(self, ticker_base: str) -> Optional[str]:
+    def get_file_by_ticker(self, ticker_base: str) -> Optional[Path]:
         """
         指定された ticker_base に対応する Parquet ファイル（先頭一致）を1つ返す。
         複数ある場合は最初の1件、なければ None。
@@ -203,7 +227,7 @@ class ParquetHandler(DjangoAppInitializer):
         if len(matching) > 1:
             self.log.info(f"[WARN] 複数ファイルが見つかりました for {ticker_base} → {matching}. 最初の1件を使用。")
 
-        return os.path.join(self.__directory, matching[0])
+        return self.__directory / matching[0]
 
     def get_latest_row_by_ticker(self, ticker_base: str ,n:int = 1) -> Optional[pd.Series]:
         """
@@ -226,18 +250,23 @@ class ParquetHandler(DjangoAppInitializer):
         else:
             return df_sorted.iloc[-n]  # 最終行（最新日）
         
-    def copy_tickerFile_to(self, target_dir:str ,ticker_base: str = None) -> None:
+    def copy_tickerFile_to(self, target_dir: str, ticker_base: str = None) -> None:
         """
-        指定されたファイルをターゲットディレクトリにコピーする。
+        指定されたティッカーファイルをターゲットディレクトリにコピーする。
 
         Parameters:
-        - filename: コピーするファイル名
-        - target_dir: コピー先のディレクトリ
+        - target_dir: コピー先のディレクトリ（str or Path）
+        - ticker_base: ティッカーファイルのベース名（例: '7203.T'）
         """
-        source_path = self.get_file_by_ticker(ticker_base)
-        print( f"source_path: {source_path}")
-        target_path = os.path.join(target_dir, os.path.basename(source_path))
+        source_path = self.get_file_by_ticker(ticker_base)  # ← Path を返す前提
+        print(f"source_path: {source_path}")
+
+        target_dir = Path(target_dir)
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+        target_path = target_dir / source_path.name
         shutil.copy2(source_path, target_path)
+
 
     def calc_flat_target_ratio(self, threshold: float = 1e-4) -> float:
         """
