@@ -66,9 +66,10 @@ def test_get_ticker():
     results = []
     # data = fetcher.fetch(tickers=tickers)
     # print(data)
+    session = fetcher.make_fake_user_agent()
     for ticker in tickers:
         try:
-            data = fetcher.fetch([ticker])
+            data = fetcher.fetch([ticker], session=session)
             print(f"✅ {ticker} OK")
             results.append(data)
             time.sleep(0.5)  # 少なくとも2秒〜5秒あける
@@ -141,12 +142,23 @@ def test_rate_0():
     handler = ParquetHandler()
     ratio = handler.calc_flat_target_ratio()
     print(f"変動がほぼない行の割合: {ratio:.2%}")
+
+def test_agent():
+    start = "1970-01-01"
+    end = date.today().strftime("%Y-%m-%d")
+    interval = "1d"
+
+    # フェッチャー初期化 & 一括取得
+    fetcher = YahooFetcher(start=start, end=end, interval=interval)
+
+    print(fetcher.make_fake_user_agent())
         
 if __name__ == "__main__":
-    test_yahoo_fetcher()
+    # test_yahoo_fetcher()
     # test_get_ticker()
     # test_parquet_update()
     # test_view_parquet_files()
     # test_rate_0()
     # retransform_all_files()
     # test_get_file_by_ticker(n=1)
+    test_agent()

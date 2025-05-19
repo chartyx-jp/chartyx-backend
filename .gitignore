@@ -174,4 +174,4 @@ cython_debug/
 .pypirc
 
 #stock data
-stock_data/
+stock_data/raw_data
