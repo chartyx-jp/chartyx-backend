@@ -1,3 +1,97 @@
 from django.shortcuts import render
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+import json
+from .models import Member
+from common.db_operator import DBOperator
+import random
+import pyotp
 
-# Create your views here.
+# get_member
+def get_member_data(data):
+    return {
+        'firstName': data.get('firstName'),
+        'lastName': data.get('lastName'),
+        'gender': data.get('gender'),
+        'birthday': data.get('birthday'),
+        'emailAddress': data.get('emailAddress'),
+        'phoneNumber': data.get('phoneNumber'),
+        'password': data.get('password'),  # パスワードのハッシュ化推奨
+        'address': data.get('address')
+    }
+
+#@csrf_exempt はAPI用途でCSRFチェックを無効化（本番ではトークン認証等を推奨）。
+#signup-会員登録
+@csrf_exempt    
+def signup(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            member_data = get_member_data(data)
+            member = Member.objects.create(**member_data)
+            return JsonResponse({'status': '登録完了しました。', 'member_id':member.userId}, status=201)
+        except Exception as e:
+            return JsonResponse({'status': '登録に失敗しました。', 'error': str(e)}, status=400)
+    else:
+        return JsonResponse({'error': 'POST request required'}, status=405)
+
+# OPT発行 6桁数字を生成
+@csrf_exempt
+def issueOTP(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            email = data.get('emailAddress')
+            # pyotpで6桁OTP生成
+            secret = pyotp.random_base32()
+            totp = pyotp.TOTP(secret, digits=6, interval=300)  #only300s
+            otp = totp.now()
+            member = DBOperator(Member).get_or_none(emailAddress=email)
+            if member:
+                member.otp = otp
+                member.otp_secret = secret  # 必要ならsecretも保存
+                member.save()
+                # OTPをメールで送信する処理を追加
+                return JsonResponse({'status': 'OTPが発行されました。', 'otp': otp}, status=200)
+            else:
+                return JsonResponse({'status': '会員情報が見つかりません。'}, status=404)
+        except Exception as e:
+            return JsonResponse({'status': 'OTP発行に失敗しました。', 'error': str(e)}, status=400)
+    else:
+        return JsonResponse({'error': 'POST request required'}, status=405)
+
+# verifyOTP-OPT認証
+@csrf_exempt
+def verifyOTP(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            email = data.get('emailAddress')
+            otp = data.get('otp')
+            member = DBOperator.get_or_none(emailAddress=email, otp=otp)
+            if member and member.otp == otp:
+                member.otp = None  # OTPを無効化
+                member.otp_secret = None
+                member.save()
+                return JsonResponse({'status': '認証成功', 'member_id': member.userId}, status=200)
+            else:
+                return JsonResponse({'status': '認証失敗'}, status=400)
+        except Exception as e:
+            return JsonResponse({'status': '認証に失敗しました。', 'error': str(e)}, status=400)
+    else:
+        return JsonResponse({'error': 'POST request required'}, status=405)
+
+#login-ログイン
+@csrf_exempt
+def login(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            email = data.get('emailAddress')
+            password = data.get('password')
+            member = DBOperator.get_or_none(emailAddress=email, password=password)  # パスワードのハッシュ化推奨
+            return JsonResponse({'status': 'ログイン成功', 'member_id': member.userId}, status=200)
+        except Exception as e:
+            return JsonResponse({'status': 'ログインに失敗しました。', 'error': str(e)}, status=400)
+    else:
+        return JsonResponse({'error': 'POST request required'}, status=405)
