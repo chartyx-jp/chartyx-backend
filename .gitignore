@@ -175,3 +175,4 @@ cython_debug/
 
 #stock data
 stock_data/raw_data
+stock_data/processed_data
