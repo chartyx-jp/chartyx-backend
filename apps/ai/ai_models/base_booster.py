@@ -12,7 +12,9 @@ class BaseBoosterModel(DjangoAppInitializer):
 
     def __init__(self, model_name: str, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
-        self.__model_path = settings.MODEL_DIR / model_name
+        self.__model_name = model_name
+        self.__model_file = f"{model_name}.json"
+        self.__model_path = settings.MODEL_DIR / self.__model_file
         self.__booster: xgb.Booster | None = None
 
 
@@ -25,6 +27,10 @@ class BaseBoosterModel(DjangoAppInitializer):
     @property
     def model_path(self) -> str:
         return str(self.__model_path)
+    
+    @property
+    def model_name(self) -> str:
+        return self.__model_name
 
     def save_model(self) -> None:
         os.makedirs(os.path.dirname(self.__model_path), exist_ok=True)

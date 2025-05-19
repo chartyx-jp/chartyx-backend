@@ -1,4 +1,5 @@
 import os
+import shutil
 import pandas as pd
 from apps.common.utils import Utils
 from tqdm import tqdm
@@ -7,7 +8,7 @@ from apps.common.app_initializer import DjangoAppInitializer
 from django.conf import settings
 
 class ParquetHandler(DjangoAppInitializer):
-    def __init__(self, directory: str = settings.PROCESSED_DATA_DIR, batch_size: int = 20, *args, ** kwargs) -> None:
+    def __init__(self, directory: str = settings.RAW_DATA_DIR, batch_size: int = 20, *args, ** kwargs) -> None:
         super().__init__(*args, **kwargs)
         """
         parquetの読み書きを行う基底クラス。
@@ -24,7 +25,7 @@ class ParquetHandler(DjangoAppInitializer):
 
 
 
-    def save(self, df: pd.DataFrame, filename: str) -> None:
+    def save(self, df: pd.DataFrame, filename: str, folder_name: str = None) -> None:
         """
         DataFrameをparquetとして保存する。
 
@@ -32,11 +33,14 @@ class ParquetHandler(DjangoAppInitializer):
         - df: 保存するDataFrame
         - filename: ファイル名（拡張子付き）
         """
+        if folder_name:
+            filename = os.path.join(folder_name, filename)
+
         path = os.path.join(self.__directory, filename)
+        os.makedirs(os.path.dirname(path), exist_ok=True)  # ディレクトリが存在しない場合は作成
         df.to_parquet(path, index=False,compression="snappy")
 
-
-    def view_parquet_preview(self, filename: str, n: int = 5) -> pd.DataFrame:
+    def view_parquet_preview(self, filename: str) -> pd.DataFrame:
         """
         指定されたParquetファイルの最初のn行を表示するユーティリティ。
 
@@ -56,8 +60,9 @@ class ParquetHandler(DjangoAppInitializer):
             raise FileNotFoundError(f"ファイルが見つかりません: {full_path}")
 
         df = pd.read_parquet(full_path)
+        pd.set_option('display.max_columns', None)
         self.log.info(f" プレビュー表示: {filename} | 行数: {len(df)} | カラム数: {df.shape[1]}")
-        return df.head(n)
+        return df
 
 
     def delete_all(self, suffix: str = ".parquet") -> int:
@@ -169,8 +174,15 @@ class ParquetHandler(DjangoAppInitializer):
                 df = self.load(f)
                 df_transformed = generator.transform(df)
                 self.save(df_transformed, f)
+
+
+
             except Exception as e:
                 self.log.error(f" 変換失敗: {f} - {e}")
+        else:
+            shutil.copytree(self.__directory, r"G:\マイドライブ\chartyx-ai-colab\processed_data", dirs_exist_ok=True)
+
+            
 
 
     def get_file_by_ticker(self, ticker_base: str) -> Optional[str]:
@@ -213,3 +225,45 @@ class ParquetHandler(DjangoAppInitializer):
             return df_sorted.iloc[-n:]
         else:
             return df_sorted.iloc[-n]  # 最終行（最新日）
+        
+    def copy_tickerFile_to(self, target_dir:str ,ticker_base: str = None) -> None:
+        """
+        指定されたファイルをターゲットディレクトリにコピーする。
+
+        Parameters:
+        - filename: コピーするファイル名
+        - target_dir: コピー先のディレクトリ
+        """
+        source_path = self.get_file_by_ticker(ticker_base)
+        print( f"source_path: {source_path}")
+        target_path = os.path.join(target_dir, os.path.basename(source_path))
+        shutil.copy2(source_path, target_path)
+
+    def calc_flat_target_ratio(self, threshold: float = 1e-4) -> float:
+        """
+        Target列の変動が閾値以下の行が、全行のうち何％あるかを返す。
+
+        Parameters:
+        - threshold: 絶対値でこの値以下のTargetを「変動なし」と見なす
+
+        Returns:
+        - flat_ratio: 全体に対する「ほぼ変動なし」行の割合（0〜1）
+        """
+        total_rows = 0
+        flat_rows = 0
+
+        for f in tqdm(self.__all_files, desc="Reransforming files"):
+            df = self.load(f)
+
+            if "Target" not in df.columns:
+                self.log.info(f"Target列が見つかりません: {f}")
+                continue  # Target列がない場合はスキップ
+
+            df = df.dropna(subset=["Target"])  # 欠損値は除外
+            total_rows += len(df)
+            flat_rows += (df["Target"].abs() <= threshold).sum()
+
+        if total_rows == 0:
+            return 0.0
+
+        return flat_rows / total_rows

@@ -1,4 +1,4 @@
-from apps.ai.models.base_model import BaseAIModel
+from apps.ai.ai_models.base_model import BaseAIModel
 import pandas as pd
 from typing import Dict
 

@@ -62,7 +62,8 @@ class Utils:
         - str: ファイル名に安全に使用できる形式の文字列
         """
         import re
-
+        # 改行、スラッシュ、をアンダースコアに変換
+        name = name.replace("\n", "_").replace("/", "_")
 
         # , を - に変換
         name = name.replace(",", "-")
