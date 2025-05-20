@@ -1,7 +1,7 @@
 from django.urls import path, include
 from . import views
 
-#会員登録、OPT入力、ログイン、プラン変更、ユーザー情報変更、アカウント削除、パスワード忘れ
+#会員登録、OPT入力、ログイン、ログアウト、プラン変更、ユーザー情報変更、アカウント削除、パスワード忘れ
 urlpatterns = [
     path('signup', views.signup, name='signup'),
     path('verifyOTP', views.verifyOTP, name='verifyOTP'),

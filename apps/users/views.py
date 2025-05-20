@@ -35,7 +35,7 @@ def signup(request):
     else:
         return JsonResponse({'error': 'POST request required'}, status=405)
 
-# OPT発行 6桁数字を生成
+# OPT発行 6桁数字生成
 @csrf_exempt
 def issueOTP(request):
     if request.method == 'POST':
@@ -44,12 +44,12 @@ def issueOTP(request):
             email = data.get('emailAddress')
             # pyotpで6桁OTP生成
             secret = pyotp.random_base32()
-            totp = pyotp.TOTP(secret, digits=6, interval=300)  #only300s
+            totp = pyotp.TOTP(secret, digits=6, interval=300)  #only300sec
             otp = totp.now()
             member = DBOperator(Member).get_or_none(emailAddress=email)
             if member:
                 member.otp = otp
-                member.otp_secret = secret  # 必要ならsecretも保存
+                member.otp_secret = secret
                 member.save()
                 # OTPをメールで送信する処理を追加
                 return JsonResponse({'status': 'OTPが発行されました。', 'otp': otp}, status=200)
@@ -93,5 +93,64 @@ def login(request):
             return JsonResponse({'status': 'ログイン成功', 'member_id': member.userId}, status=200)
         except Exception as e:
             return JsonResponse({'status': 'ログインに失敗しました。', 'error': str(e)}, status=400)
+    else:
+        return JsonResponse({'error': 'POST request required'}, status=405)
+
+# planSettings-プラン変更
+def planSettings(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            userId = data.get('userId')
+            plan = data.get('plan') # sentakushita puran
+            member = DBOperator.get_or_none(userId=userId)
+            if member:
+                member.plan = plan
+                member.save()
+                return JsonResponse({'status': 'プラン変更成功'}, status=200)
+            else:
+                return JsonResponse({'status': '会員情報が見つかりません。'}, status=404)
+        except Exception as e:
+            return JsonResponse({'status': 'プラン変更に失敗しました。', 'error': str(e)}, status=400)
+    else:
+        return JsonResponse({'error': 'POST request required'}, status=405)
+
+# profileSettings-ユーザー情報変更
+# 取得した情報を元にユーザー情報を更新
+# 取得する情報は、時による
+def profileSettings(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            userId = data.get('userId')
+            member_data = get_member_data(data)
+            member = DBOperator.get_or_none(userId=userId)
+            if member:
+                for key, value in member_data.items():
+                    setattr(member, key, value)
+                member.save()
+                return JsonResponse({'status': 'ユーザー情報変更成功'}, status=200)
+            else:
+                return JsonResponse({'status': '会員情報が見つかりません。'}, status=404)
+        except Exception as e:
+            return JsonResponse({'status': 'ユーザー情報変更に失敗しました。', 'error': str(e)}, status=400)
+    else:
+        return JsonResponse({'error': 'POST request required'}, status=405)
+    
+# deleteAccount-アカウント削除
+@csrf_exempt
+def deleteAccount(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            userId = data.get('userId')
+            member = DBOperator.get_or_none(userId=userId)
+            if member:
+                member.delete()
+                return JsonResponse({'status': 'アカウント削除成功'}, status=200)
+            else:
+                return JsonResponse({'status': '会員情報が見つかりません。'}, status=404)
+        except Exception as e:
+            return JsonResponse({'status': 'アカウント削除に失敗しました。', 'error': str(e)}, status=400)
     else:
         return JsonResponse({'error': 'POST request required'}, status=405)
