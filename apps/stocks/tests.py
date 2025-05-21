@@ -4,6 +4,7 @@ from django.test import TestCase
 
 from apps.common.app_initializer import DjangoAppInitializer as initializer
 initializer.setup_django()
+
 from apps.stocks.services.parquet_handler import ParquetHandler
 from apps.ai.features.base_v3 import BasicFeatureGeneratorV3
 from apps.ai.inference.predictor import StockAIPredictor
@@ -90,8 +91,24 @@ def retransform_all_files():
         # ディレクトリ設定
         parquet_handler = ParquetHandler()
         generator = BasicFeatureGeneratorV3()
-        
         parquet_handler.retransform_all_files(generator=generator)
+        print(" すべてのファイルを再変換しました")
+    except Exception as e:
+        print(f" 変換失敗: {e}")
+
+def transform_data_to_raw():
+    """
+    既存のparquetファイルをすべて読み込み、
+    transformを通して再加工し、上書き保存する
+    """
+    try:
+        yf = YahooFetcher(start="1970-01-01", end=date.today().strftime("%Y-%m-%d"), interval="1d")
+        # ディレクトリ設定
+        countries = list(yf.COUNTRY_META.keys())
+        for country in countries:
+            print(f" {country} のデータを変換中")
+            parquet_handler = ParquetHandler(directory=settings.RAW_DATA_DIR/yf.COUNTRY_META[country]["folder"])
+            parquet_handler.retransform_all_files(column=["Date", "Open", "High", "Low", "Close", "Volume"])
         print(" すべてのファイルを再変換しました")
     except Exception as e:
         print(f" 変換失敗: {e}")
@@ -110,29 +127,6 @@ def test_view_parquet_files():
         print(f" 読み込み失敗: {e}")
         
 
-def overwrite_all_parquet(drop_columns=None):
-    import os
-    import pandas as pd
-    from apps.ai.features.base_v2 import BasicFeatureGeneratorV2
-
-    DATA_DIR = "C:/HAL/SK/chartyx-backend/stock_data/processed_data"
-    generator = BasicFeatureGeneratorV2()
-
-    for filename in os.listdir(DATA_DIR):
-        if filename.endswith(".parquet"):
-            path = os.path.join(DATA_DIR, filename)
-            try:
-                df = pd.read_parquet(path)
-
-                if drop_columns:
-                    df.drop(columns=[col for col in drop_columns if col in df.columns], inplace=True)
-
-                df_transformed = generator.transform(df)
-                df_transformed.to_parquet(path, index=False)
-                print(f" 上書き完了: {filename}")
-            except Exception as e:
-                print(f" 変換失敗: {filename} - {e}")
-    print(" すべてのファイルを上書きしました")
 
 
 
@@ -143,6 +137,7 @@ def test_rate_0():
     ratio = handler.calc_flat_target_ratio()
     print(f"変動がほぼない行の割合: {ratio:.2%}")
 
+
         
 if __name__ == "__main__":
     # test_yahoo_fetcher()
@@ -151,4 +146,5 @@ if __name__ == "__main__":
     # test_view_parquet_files()
     # test_rate_0()
     # retransform_all_files()
+    transform_data_to_raw()
     # test_get_file_by_ticker(n=1)
