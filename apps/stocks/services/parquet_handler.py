@@ -3,7 +3,7 @@ import pandas as pd
 from pathlib import Path
 from apps.common.utils import Utils
 from tqdm import tqdm
-from typing import Dict, Optional
+from typing import Dict, Optional, Generator,List
 from apps.common.app_initializer import DjangoAppInitializer
 from django.conf import settings
 
@@ -24,6 +24,14 @@ class ParquetHandler(DjangoAppInitializer):
         self.__all_files = [f for f in self.__directory.iterdir()
                         if f.is_file() and f.suffix == ".parquet"]
         self.__current_batch_index = 0
+
+
+    @property
+    def files(self) -> list[Path]:
+        """
+        現在のディレクトリ内のparquetファイルを返す。
+        """
+        return self.__all_files
 
 
     def refresh_all_files(self) -> None:
@@ -141,7 +149,7 @@ class ParquetHandler(DjangoAppInitializer):
         """
         all_dfs = []
 
-        for file in self.__all_files:
+        for file in tqdm(self.__all_files, desc="ファイルを読み込んでいます"):
             if file.is_file() and file.suffix == suffix:
                 try:
                     df = pd.read_parquet(file)
@@ -153,6 +161,27 @@ class ParquetHandler(DjangoAppInitializer):
             raise FileNotFoundError(f" '{suffix}' は {self.__directory} に存在しません")
 
         return pd.concat(all_dfs, ignore_index=True)
+
+    def load_each(self, suffix: str = ".parquet") -> Generator[pd.DataFrame, None, None]:
+        """
+        指定ディレクトリ内のparquetファイルを1つずつyieldで返す。
+        メモリ節約のためconcatはしない。
+
+        Parameters:
+        - suffix: ファイル名のフィルタリング条件
+
+        Yields:
+        - pd.DataFrame: 各ファイル単位のデータフレーム
+        """
+        for file in tqdm(self.__all_files, desc="ファイルを読み込んでいます"):
+            if file.is_file() and file.suffix == suffix:
+                try:
+                    df = pd.read_parquet(file)
+                    yield df
+                except Exception as e:
+                    self.log.error(f" 読み込み失敗: {file.name} - {e}")
+
+
 
     def get_next_batch_filenames(self) -> list[Path]:
             start = self.__current_batch_index * self.__batch_size
@@ -188,23 +217,41 @@ class ParquetHandler(DjangoAppInitializer):
 
         return pd.concat(all_dfs, ignore_index=True)
     
-    def retransform_all_files(self, generator) -> None:
+    def retransform_all_files(self, column:List[str]=None ,generator:Generator=None,handler:"ParquetHandler"=None, google_drive:bool=False) -> None:
         """
         既存のparquetファイルをすべて読み込み、
         transformを通して再加工し、上書き保存する
         """
-        for f in tqdm(self.__all_files, desc="Reransforming files"):
-            try:
-                df = self.load(f)
-                df_transformed = generator.transform(df)
-                self.save(df_transformed, f)
+        try:
+            for f in tqdm(self.__all_files, desc="Reransforming files"):
+                try:
+                    # ファイルを読み込む
+                    df = self.load(f.name)
+                    # 列指定がある場合はその列のみを選択
+                    if column is not None:
+                        df = df[column]
+                    # 列名を変更する場合はここで行う
+                    if generator is not None:
+                        df = generator.transform(df)
 
+                    #保存先の指定先がある場合はその場所に保存
+                    if handler is not None:
+                        handler.save(df, f.name)
+                    else:
+                        self.save(df, f)
 
-
-            except Exception as e:
-                self.log.error(f" 変換失敗: {f} - {e}")
-        else:
-            shutil.copytree(self.__directory, r"G:\マイドライブ\chartyx-ai-colab\processed_data", dirs_exist_ok=True)
+                except Exception as e:
+                    self.log.error(f" 変換失敗: {f} - {e}")
+            else:
+                if google_drive:
+                    # Google Driveに保存する場合
+                    self.log.info("Google Driveに保存中...")
+                    shutil.copytree(self.__directory, r"G:\マイドライブ\chartyx-ai-colab\processed_data", dirs_exist_ok=True)
+        except Exception as e:
+            self.log.error(f" 変換失敗: {e}")
+            raise e
+        finally:
+            self.refresh_all_files()  # 保存後にファイルリストを更新
 
             
 
