@@ -9,7 +9,7 @@ urlpatterns = [
     path('planSettings', views.planSettings, name='planSettings'),
     path('profileSettings', views.profileSettings, name='profileSettings'),
     path('deleteAccount', views.deleteAccount, name='deleteAccount'),
-    path('forgotPassword', views.forgotPassword, name='forgotPassword'),
+    # path('forgotPassword', views.forgotPassword, name='forgotPassword'),
 ]
 
 

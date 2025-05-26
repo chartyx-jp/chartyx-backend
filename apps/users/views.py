@@ -3,9 +3,11 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 import json
 from .models import Member
-from common.db_operator import DBOperator
+from apps.common.db_operator import DBOperator
 import random
-import pyotp
+import hashlib
+db_operator = DBOperator()
+# import pyotp
 
 # get_member
 def get_member_data(data):
@@ -19,6 +21,12 @@ def get_member_data(data):
         'password': data.get('password'),  # パスワードのハッシュ化推奨
         'address': data.get('address')
     }
+    
+# パスワードのハッシュ化
+def hash_password(password):
+    if password is None:
+        return None
+    return hashlib.sha256(password.encode()).hexdigest()  # SHA-256
 
 #@csrf_exempt はAPI用途でCSRFチェックを無効化（本番ではトークン認証等を推奨）。
 #signup-会員登録
@@ -28,8 +36,9 @@ def signup(request):
         try:
             data = json.loads(request.body)
             member_data = get_member_data(data)
+            member_data['password'] = hash_password(member_data['password'])
             member = Member.objects.create(**member_data)
-            return JsonResponse({'status': '登録完了しました。', 'member_id':member.userId}, status=201)
+            return JsonResponse({'status': '登録完了しました。', 'member_id':member.id}, status=201)
         except Exception as e:
             return JsonResponse({'status': '登録に失敗しました。', 'error': str(e)}, status=400)
     else:
@@ -68,7 +77,7 @@ def verifyOTP(request):
             data = json.loads(request.body)
             email = data.get('emailAddress')
             otp = data.get('otp')
-            member = DBOperator.get_or_none(emailAddress=email, otp=otp)
+            member = db_operator.get_or_none(emailAddress=email, otp=otp)
             if member and member.otp == otp:
                 member.otp = None  # OTPを無効化
                 member.otp_secret = None
@@ -87,10 +96,13 @@ def login(request):
     if request.method == 'POST':
         try:
             data = json.loads(request.body)
-            email = data.get('emailAddress')
-            password = data.get('password')
-            member = DBOperator.get_or_none(emailAddress=email, password=password)  # パスワードのハッシュ化推奨
-            return JsonResponse({'status': 'ログイン成功', 'member_id': member.userId}, status=200)
+            emailAddress = data.get('emailAddress')
+            password = hash_password(data.get('password'))
+            member = DBOperator(Member).get_or_none(emailAddress=emailAddress, password=password)  # パスワードのハッシュ化推奨
+            if member:
+                return JsonResponse({'status': 'ログイン成功', 'member_id': member.id}, status=200)
+            else:
+                return JsonResponse({'status': 'ログイン失敗', 'error':'メールアドレスまたはパスワードが違うよ'}, status=401)
         except Exception as e:
             return JsonResponse({'status': 'ログインに失敗しました。', 'error': str(e)}, status=400)
     else:
@@ -143,8 +155,9 @@ def deleteAccount(request):
     if request.method == 'POST':
         try:
             data = json.loads(request.body)
-            userId = data.get('userId')
-            member = DBOperator.get_or_none(userId=userId)
+            userid = data.get('userId')
+            emailAddress = data.get('emailAddress')
+            member = DBOperator(Member).get_or_none(id=userid, emailAddress=emailAddress)
             if member:
                 member.delete()
                 return JsonResponse({'status': 'アカウント削除成功'}, status=200)
