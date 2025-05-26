@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+from tqdm import tqdm
 from apps.stocks.services.yahoo_fetcher import ParquetHandler
 from apps.ai.features.base import FeatureGeneratorBase
 from apps.common.app_initializer import DjangoAppInitializer
@@ -7,12 +8,49 @@ from django.conf import settings
 
 
 class BasicFeatureGeneratorV4(FeatureGeneratorBase, DjangoAppInitializer):
+    CATEGORY_BINS = [
+        (0, 524),
+        (524, 1020),
+        (1020, 1923),
+        (1923, 5000),
+        (5000, 10000),
+        (10000, 50000),
+        (50000, float('inf'))
+    ]
+    CATEGORY_LABELS = [
+        '0〜524円',
+        '524〜1020円',
+        '1020〜1923円',
+        '1923〜5000円',
+        '5000〜10000円',
+        '10000〜50000円',
+        '50000円以上'
+    ]
+
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
 
         self.__read_handler = ParquetHandler(directory=settings.RAW_DATA_DIR/"japan", batch_size=20)
         self.__write_handler = ParquetHandler(directory=settings.PROCESSED_DATA_DIR, batch_size=20)
+        
+    def make_transformed_data(self) -> None:
+        """
+        データを変換してParquetファイルに保存する。
+        """
+        for file in tqdm(self.__read_handler.files, desc="データ変換中", unit="ファイル"):
+            try:
+                df = pd.read_parquet(file)
+                df_transformed = self.transform(df)
+                df_transformed = self.drop_unused_columns(df=df_transformed)
+                self.__write_handler.save(df_transformed,filename=file.name)
+            except Exception as e:
+                self.log.error(f"データ変換中にエラーが発生しました: {e},{file.name}内")
+        self.log.info( "全てのデータを変換して保存しました。")
+            
+            
+                
 
+            
 
 
     def transform(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -106,8 +144,12 @@ class BasicFeatureGeneratorV4(FeatureGeneratorBase, DjangoAppInitializer):
         df["Month_cos"] = np.cos(2 * np.pi * df["Date"].dt.month / 12)
         df["DOW_sin"] = np.sin(2 * np.pi * df["Date"].dt.dayofweek / 5)
         df["DOW_cos"] = np.cos(2 * np.pi * df["Date"].dt.dayofweek / 5)
+        
+        self.add_price_category(df, price_col='Close', category_col='price_category')
+        
+        df = df.drop(["Date", "Open", "High", "Low", "Close", "Volume"], axis=1)
 
-        return df  
+        return df
 
     @staticmethod
     def split(df: pd.DataFrame, remove_zero_target: bool = True):
@@ -143,7 +185,7 @@ class BasicFeatureGeneratorV4(FeatureGeneratorBase, DjangoAppInitializer):
         print(f"最終サンプル数: {len(X)} 行, {X.shape[1]} 特徴量")
         return X, y
 
-    def drop_unused_columns(self, df: pd.DataFrame,threshold:int = 1e-4) -> pd.DataFrame:
+    def drop_unused_columns(self, df: pd.DataFrame,threshold:float = 1e-4) -> pd.DataFrame:
         """
         不整値を削除する。
         """
@@ -165,6 +207,28 @@ class BasicFeatureGeneratorV4(FeatureGeneratorBase, DjangoAppInitializer):
         dom = date.day
         adjusted_dom = dom + first_day.weekday()  # 月曜起点（weekday=0）
         return int(np.ceil(adjusted_dom / 7.0))
+    
+    
+    @classmethod
+    def get_price_category_number(cls, price):
+        for i, (low, high) in enumerate(cls.CATEGORY_BINS):
+            if low <= price < high:
+                return i + 1  # 1始まり
+        return len(cls.CATEGORY_BINS)
+
+    @classmethod
+    def get_price_category_label(cls, price):
+        for i, (low, high) in enumerate(cls.CATEGORY_BINS):
+            if low <= price < high:
+                return cls.CATEGORY_LABELS[i]
+        return cls.CATEGORY_LABELS[-1]
+
+    def add_price_category(self, df, price_col='Close', category_col='price_category'):
+        """
+        指定されたDataFrameに価格カテゴリ番号列（1,2,...）とカテゴリラベル列を追加
+        """
+        df[category_col] = df[price_col].apply(self.get_price_category_number)
+        return df
     
     def plot_close_distribution(self, threshold: float = 1e-4):
         """
@@ -244,7 +308,12 @@ class BasicFeatureGeneratorV4(FeatureGeneratorBase, DjangoAppInitializer):
         plt.show()
 
 
-    def analyze_close_distribution(self, bins_within_iqr=4):
+    def analyze_close_distribution(self, n_bins=50):
+        """
+        株価のClose分布を、箱ひげ図とヒストグラムで可視化。
+        ヒストグラム・箱ひげ図のx軸範囲は「LOWER～UPPERの中の実データMIN～MAX」に限定。
+        ヒストグラムのビン数もn_binsで細かく調整可能。
+        """
         import numpy as np
         import pandas as pd
         import matplotlib.pyplot as plt
@@ -252,73 +321,128 @@ class BasicFeatureGeneratorV4(FeatureGeneratorBase, DjangoAppInitializer):
 
         # すべてのClose価格を収集
         all_close = []
-        for df in self.__read_handler.load_each(suffix=".parquet"):
-            df = self.transform(df)
-            valid = self.drop_unused_columns(df=df)
-            all_close.extend(valid["Close"].dropna().tolist())
+        try:
+            for df in self.__read_handler.load_each(suffix=".parquet"):
+                df = self.transform(df)
+                valid = self.drop_unused_columns(df=df)
+                all_close.extend(valid["Close"].dropna().tolist())
+        except AttributeError:
+            print("Warning: '__read_handler' not found. Using dummy data for demonstration.")
+            dummy_data = np.random.normal(loc=700, scale=100, size=5000).tolist() + \
+                        np.random.normal(loc=1200, scale=50, size=100).tolist() + \
+                        np.random.normal(loc=300, scale=30, size=100).tolist() + \
+                        [np.nan]*50 + [-10]*20
+            all_close.extend(dummy_data)
 
-        # Series化 & 0以下除外
         close = pd.Series(all_close)
-        close = close[close > 0]
+        close = close[close > 0]  # 0以下除外
 
-        # 四分位数とIQR計算
+        if close.empty:
+            print("Error: No valid Close prices found after filtering.")
+            return
+
+        # 四分位数・IQR・理論ひげ
         q1 = close.quantile(0.25)
         q3 = close.quantile(0.75)
         iqr = q3 - q1
-        center = close[(close >= q1) & (close <= q3)]
-        median = center.median()
-        mean = center.mean()
+        lower_whisker_boundary = q1 - 1.5 * iqr
+        upper_whisker_boundary = q3 + 1.5 * iqr
 
-        # bin定義（ヒストグラム区切り用）
-        bin_edges = np.linspace(q1, q3, bins_within_iqr + 1)
-        bin_labels = [f"{int(bin_edges[i])}-{int(bin_edges[i+1])}" for i in range(len(bin_edges) - 1)]
-        bin_counts = pd.cut(center, bins=bin_edges, labels=bin_labels).value_counts().sort_index()
+        # 0未満にならないように調整し、LOWER～UPPER内の実データのみ抽出
+        whisker_data = close[(close >= max(0, lower_whisker_boundary)) & (close <= upper_whisker_boundary)]
+        if whisker_data.empty:
+            min_in_range, max_in_range = q1, q3
+        else:
+            min_in_range, max_in_range = whisker_data.min(), whisker_data.max()
 
-        # グラフ描画開始
-        plt.figure(figsize=(12, 6))
+        # ヒストグラムのビン定義（MIN～MAXで等間隔）
+        bins_arr = np.linspace(min_in_range, max_in_range, n_bins + 1)
 
-        # 🔹 1. IQRヒストグラム
+        # ビン集計
+        bin_labels = [f"{int(bins_arr[i])}-{int(bins_arr[i+1])}" for i in range(len(bins_arr) - 1)]
+        bin_counts = pd.cut(whisker_data, bins=bins_arr, labels=bin_labels, include_lowest=True).value_counts().sort_index() # type: ignore
+
+        median = close.median()
+        mean = close.mean()
+
+        # 描画
+        plt.figure(figsize=(14, 7))
+
+        # 1. ヒストグラム
         plt.subplot(1, 2, 1)
-        sns.histplot(center, bins=30, color="skyblue", edgecolor="black")
-
-        # 線と凡例
+        sns.histplot(
+            whisker_data, 
+            bins=bins_arr, 
+            color="skyblue", 
+            edgecolor="black", 
+            kde=False
+        )
         plt.axvline(q1, color='green', linestyle='--', label=f'Q1 (25%): {q1:.1f}')
         plt.axvline(median, color='orange', linestyle='-', label=f'Median (50%): {median:.1f}')
         plt.axvline(q3, color='red', linestyle='--', label=f'Q3 (75%): {q3:.1f}')
         plt.axvline(mean, color='purple', linestyle=':', label=f'Mean: {mean:.1f}')
-
-        plt.title("Histogram of Close Prices (within IQR)")
+        plt.xlim(min_in_range, max_in_range)
+        plt.title("Histogram of Close Prices (MIN-MAX of Whisker)")
         plt.xlabel("Close Price")
         plt.ylabel("Frequency")
         plt.legend()
+        plt.grid(axis='y', linestyle='--', alpha=0.7)
 
-        # 🔹 2. Boxplot（IQRのみで外れ値なし）
+        # 2. Boxplot
         plt.subplot(1, 2, 2)
         sns.boxplot(x=close, color="lightgreen")
-
-        # Median注釈（boxの中央にラベル）
+        # 目視しやすく範囲もMIN～MAX
+        plt.axvline(min_in_range, color='blue', linestyle=':', label=f'MIN in Whisker: {min_in_range:.1f}')
+        plt.axvline(max_in_range, color='blue', linestyle=':', label=f'MAX in Whisker: {max_in_range:.1f}')
         plt.axvline(median, color='orange', linestyle='-', label=f'Median (50%)')
-        plt.text(median, 0.05, "Median", ha='center', color='orange', transform=plt.gca().get_xaxis_transform())
-
-        # 描画範囲を制限して「IQRの範囲を見せる」
-        plt.xlim(q1 - iqr * 0.1, q3 + iqr * 0.1)  # 少し余白つける
-
-        plt.title("Boxplot of Close Prices (within IQR)")
+        plt.text(median, plt.ylim()[1] * 0.05, "Median", ha='center', color='orange', weight='bold')
+        plt.xlim(min_in_range, max_in_range)
+        plt.title("Boxplot of Close Prices (MIN-MAX of Whisker Data)")
         plt.xlabel("Close Price")
         plt.legend()
-
+        plt.grid(axis='x', linestyle='--', alpha=0.7)
         plt.tight_layout()
         plt.show()
 
         # テキストログ出力
-        print("📦 IQR Stats")
+        print("\n📦 IQR Stats")
         print(f"Q1: {q1:.2f}, Q3: {q3:.2f}, IQR: {iqr:.2f}")
         print(f"Median: {median:.2f}, Mean: {mean:.2f}")
-        print("\n🔹 Bin Counts within IQR:")
+        print(f"Theoretical Lower Whisker (Q1 - 1.5*IQR): {lower_whisker_boundary:.2f}")
+        print(f"Theoretical Upper Whisker (Q3 + 1.5*IQR): {upper_whisker_boundary:.2f}")
+        print(f"MIN in Whisker (>=0): {min_in_range:.2f}")
+        print(f"MAX in Whisker: {max_in_range:.2f}")
+        print(f"\n🔹 Bin Counts within Whisker MIN-MAX:")
         print(bin_counts)
+        
+    def process_all_parquet_files(self, threshold=65000):
+        """
+        Parquetファイルを全て自動でチェックし、Closeに閾値以上があればスキップしてファイル名を出力。
+        呼び出しのみで完結。何も返さない。
+        """
 
+        for file_path in self.__read_handler.files:
+            try:
+                df = pd.read_parquet(file_path)
+            except Exception as e:
+                print(f"読み込み失敗: {file_path}, error: {e}")
+                continue
+
+            if (df['Close'] >= threshold).any():
+                print(f"スキップ: Closeに{threshold}以上を検出 → {file_path}")
+                continue
+
+            # ここに「通常の処理」を書く
+            # print(f"処理: {file_path}")
+
+        print("全ファイル処理が完了しました。")
+
+        
 if __name__ == "__main__":
     generator = BasicFeatureGeneratorV4()
     # generator.plot_close_distribution(threshold=1e-4)
-    generator.analyze_close_distribution()
+    # generator.analyze_close_distribution(n_bins=50)
+    # generator.process_all_parquet_files(threshold=65000)
+    generator.make_transformed_data()
+    
 
