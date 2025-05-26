@@ -67,10 +67,9 @@ def test_get_ticker():
     results = []
     # data = fetcher.fetch(tickers=tickers)
     # print(data)
-    session = fetcher.make_fake_user_agent()
     for ticker in tickers:
         try:
-            data = fetcher.fetch([ticker], session=session)
+            data = fetcher.fetch([ticker])
             print(f"✅ {ticker} OK")
             results.append(data)
             time.sleep(0.5)  # 少なくとも2秒〜5秒あける
