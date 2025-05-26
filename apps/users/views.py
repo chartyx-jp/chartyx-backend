@@ -6,6 +6,7 @@ from .models import Member
 from apps.common.db_operator import DBOperator
 import random
 import hashlib
+import datetime
 db_operator = DBOperator()
 # import pyotp
 
@@ -21,7 +22,7 @@ def get_member_data(data):
         'password': data.get('password'),  # パスワードのハッシュ化推奨
         'address': data.get('address')
     }
-    
+
 # パスワードのハッシュ化
 def hash_password(password):
     if password is None:
@@ -109,17 +110,20 @@ def login(request):
         return JsonResponse({'error': 'POST request required'}, status=405)
 
 # planSettings-プラン変更
+@csrf_exempt
 def planSettings(request):
     if request.method == 'POST':
         try:
             data = json.loads(request.body)
             userId = data.get('userId')
             plan = data.get('plan') # sentakushita puran
-            member = DBOperator.get_or_none(userId=userId)
+            member = DBOperator(Member).get_or_none(id=userId)
             if member:
                 member.plan = plan
+                #　現在の日付を登録
+                member.subscriptionRegistrationDate = datetime.date.today()
                 member.save()
-                return JsonResponse({'status': 'プラン変更成功'}, status=200)
+                return JsonResponse({'status': 'プラン変更成功。'}, status=200)
             else:
                 return JsonResponse({'status': '会員情報が見つかりません。'}, status=404)
         except Exception as e:
