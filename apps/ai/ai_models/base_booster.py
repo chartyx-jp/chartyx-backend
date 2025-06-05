@@ -25,8 +25,9 @@ class BaseBoosterModel(DjangoAppInitializer):
         return self.__booster
     
     @property
-    def model_path(self) -> str:
-        return str(self.__model_path)
+    def model_path(self) -> Path:
+        return self.__model_path
+
     
     @property
     def model_name(self) -> str:
@@ -44,6 +45,3 @@ class BaseBoosterModel(DjangoAppInitializer):
         self.__booster.load_model(str(self.__model_path))
         self.logger.info(f"Boosterモデル読込完了: {self.__model_path}")
 
-    @property
-    def model_path(self) -> Path:
-        return self.__model_path

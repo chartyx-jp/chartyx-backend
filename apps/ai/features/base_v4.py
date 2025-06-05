@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
+import shutil
 from apps.stocks.services.yahoo_fetcher import ParquetHandler
 from apps.ai.features.base import FeatureGeneratorBase
 from apps.common.app_initializer import DjangoAppInitializer
@@ -48,11 +49,6 @@ class BasicFeatureGeneratorV4(FeatureGeneratorBase, DjangoAppInitializer):
         self.log.info( "全てのデータを変換して保存しました。")
             
             
-                
-
-            
-
-
     def transform(self, df: pd.DataFrame) -> pd.DataFrame:
         df = df[["Date", "Open", "High", "Low", "Close", "Volume"]].copy()
         df = df[df["Open"].notna() & (df["Close"] != 0)]
@@ -147,7 +143,7 @@ class BasicFeatureGeneratorV4(FeatureGeneratorBase, DjangoAppInitializer):
         
         self.add_price_category(df, price_col='Close', category_col='price_category')
         
-        df = df.drop(["Date", "Open", "High", "Low", "Close", "Volume"], axis=1)
+        df = df.drop(["Open", "High", "Low", "Close", "Volume"], axis=1)
 
         return df
 
@@ -185,16 +181,17 @@ class BasicFeatureGeneratorV4(FeatureGeneratorBase, DjangoAppInitializer):
         print(f"最終サンプル数: {len(X)} 行, {X.shape[1]} 特徴量")
         return X, y
 
-    def drop_unused_columns(self, df: pd.DataFrame,threshold:float = 1e-4) -> pd.DataFrame:
+    def drop_unused_columns(self, df: pd.DataFrame,threshold:float = 1e-4, is_target:bool = False) -> pd.DataFrame:
         """
         不整値を削除する。
         """
         if isinstance(df, pd.Series):
             df = pd.DataFrame([df])
-        df = df.dropna(subset=["Target"])
+        if is_target:
+            df = df.dropna(subset=["Target"])
 
-        # Targetが0に極めて近いデータを除外（変動なしとして扱う）
-        df = df[df["Target"].abs() > threshold]
+            #Targetが0に極めて近いデータを除外（変動なしとして扱う）
+            df = df[df["Target"].abs() > threshold]
 
         df.replace([np.inf, -np.inf], np.nan, inplace=True)
         df.dropna(inplace=True)
@@ -227,129 +224,53 @@ class BasicFeatureGeneratorV4(FeatureGeneratorBase, DjangoAppInitializer):
         """
         指定されたDataFrameに価格カテゴリ番号列（1,2,...）とカテゴリラベル列を追加
         """
-        df[category_col] = df[price_col].apply(self.get_price_category_number)
+        df[category_col] = df[price_col].apply(self.get_price_category_number).astype("category")
         return df
     
-    def plot_close_distribution(self, threshold: float = 1e-4):
+    
+    def analyze_feature_distribution(self, column_name="Close", n_bins=50):
         """
-        Plot distribution of valid Close prices in ¥1000 price bins.
-        """
-        from collections import Counter
-        import numpy as np
-        import matplotlib.pyplot as plt
-
-        counter = Counter()
-        total_count = 0
-        # price_bins = np.arange(-0.1, 0.1 + 0.01, 0.01)  # -10%〜+10%を1%刻みで LOG差分
-
-        price_bins = np.arange(0, 100000, 1000)
-
-        for df_transformed in self.__read_handler.load_each(suffix=".parquet"):
-            df_transformed = self.transform(df_transformed)
-            df_transformed = self.drop_unused_columns(df=df_transformed)
-            # X,y = self.split(df_transformed, remove_zero_target=True)
-            # valid_close = y
-
-            valid_close = df_transformed[
-                df_transformed["Close"] > 0
-                # df_transformed["Target"].notna() &
-                # (df_transformed["Target"].abs() != 0) &
-                # (df_transformed["Close"] > 0)
-            ]["Close"]
-
-            bin_indices = np.digitize(valid_close, price_bins, right=False)
-            for b in bin_indices:
-                counter[b] += 1
-            total_count += len(valid_close)
-
-        # ラベルと割合作成（index error回避）
-        labels = []
-        percentages = []
-        bin_counts = []  # ← 件数も記録する
-        print(sorted(counter.keys()))
-        for i in sorted(counter.keys()):
-            if i < len(price_bins):
-                label = f"{price_bins[i - 1]}–{price_bins[i]}"
-            else:
-                label = f"{price_bins[-1]}+"
-            labels.append(label)
-            
-            count = counter[i]
-            percentage = count / total_count * 100
-
-            percentages.append(percentage)
-            bin_counts.append(count)  # 件数保存
-
-            # 件数と割合をログ出力
-            print(f"{label}: {count}件 ({percentage:.4f}%)")
-        print(f"全体件数{total_count}")
-
-        # 描画
-        plt.figure(figsize=(12, 5))
-
-        # 棒グラフ（割合）
-        bars = plt.bar(labels, percentages, label='Percentage by Price Range', color='skyblue', edgecolor='black')
-
-        # 折れ線グラフ（滑らかに変化を見る）
-        plt.plot(range(len(labels)), percentages, color='orange', marker='o', linestyle='-', linewidth=1.5, markersize=4, label='Trend Line')
-
-        # X軸ラベル間引き（長すぎ防止）
-        plt.xticks(
-            ticks=np.arange(len(labels))[::2],
-            labels=[labels[i] for i in range(len(labels))][::2],
-            rotation=60,
-            fontsize=8
-        )
-
-        plt.title("Distribution of Stocks by Price Range (per ¥1000)")
-        plt.ylabel("Percentage (%)")
-        plt.legend()
-        plt.tight_layout()
-        plt.show()
-
-
-    def analyze_close_distribution(self, n_bins=50):
-        """
-        株価のClose分布を、箱ひげ図とヒストグラムで可視化。
-        ヒストグラム・箱ひげ図のx軸範囲は「LOWER～UPPERの中の実データMIN～MAX」に限定。
-        ヒストグラムのビン数もn_binsで細かく調整可能。
+        任意カラム（例: Close, Volume等）の分布を、箱ひげ図・ヒストグラムで可視化。
+        x軸範囲は「LOWER～UPPERの中の実データMIN～MAX」に限定。n_binsでビン数調整。
         """
         import numpy as np
         import pandas as pd
         import matplotlib.pyplot as plt
         import seaborn as sns
 
-        # すべてのClose価格を収集
-        all_close = []
+        # すべての対象カラム値を収集
+        all_values = []
         try:
             for df in self.__read_handler.load_each(suffix=".parquet"):
-                df = self.transform(df)
                 valid = self.drop_unused_columns(df=df)
-                all_close.extend(valid["Close"].dropna().tolist())
+                # NaN・0未満除外（例：出来高や他カラムも0以上前提とする場合）
+                values = valid[column_name].dropna()
+                values = values[values > 0]
+                all_values.extend(values.tolist())
         except AttributeError:
             print("Warning: '__read_handler' not found. Using dummy data for demonstration.")
             dummy_data = np.random.normal(loc=700, scale=100, size=5000).tolist() + \
                         np.random.normal(loc=1200, scale=50, size=100).tolist() + \
                         np.random.normal(loc=300, scale=30, size=100).tolist() + \
                         [np.nan]*50 + [-10]*20
-            all_close.extend(dummy_data)
+            all_values.extend(dummy_data)
 
-        close = pd.Series(all_close)
-        close = close[close > 0]  # 0以下除外
+        feature_values = pd.Series(all_values)
+        feature_values = feature_values[feature_values > 0]  # 0以下除外
 
-        if close.empty:
-            print("Error: No valid Close prices found after filtering.")
+        if feature_values.empty:
+            print("Error: No valid data found after filtering.")
             return
 
         # 四分位数・IQR・理論ひげ
-        q1 = close.quantile(0.25)
-        q3 = close.quantile(0.75)
+        q1 = feature_values.quantile(0.25)
+        q3 = feature_values.quantile(0.75)
         iqr = q3 - q1
         lower_whisker_boundary = q1 - 1.5 * iqr
         upper_whisker_boundary = q3 + 1.5 * iqr
 
         # 0未満にならないように調整し、LOWER～UPPER内の実データのみ抽出
-        whisker_data = close[(close >= max(0, lower_whisker_boundary)) & (close <= upper_whisker_boundary)]
+        whisker_data = feature_values[(feature_values >= max(0, lower_whisker_boundary)) & (feature_values <= upper_whisker_boundary)]
         if whisker_data.empty:
             min_in_range, max_in_range = q1, q3
         else:
@@ -362,8 +283,8 @@ class BasicFeatureGeneratorV4(FeatureGeneratorBase, DjangoAppInitializer):
         bin_labels = [f"{int(bins_arr[i])}-{int(bins_arr[i+1])}" for i in range(len(bins_arr) - 1)]
         bin_counts = pd.cut(whisker_data, bins=bins_arr, labels=bin_labels, include_lowest=True).value_counts().sort_index() # type: ignore
 
-        median = close.median()
-        mean = close.mean()
+        median = feature_values.median()
+        mean = feature_values.mean()
 
         # 描画
         plt.figure(figsize=(14, 7))
@@ -382,30 +303,29 @@ class BasicFeatureGeneratorV4(FeatureGeneratorBase, DjangoAppInitializer):
         plt.axvline(q3, color='red', linestyle='--', label=f'Q3 (75%): {q3:.1f}')
         plt.axvline(mean, color='purple', linestyle=':', label=f'Mean: {mean:.1f}')
         plt.xlim(min_in_range, max_in_range)
-        plt.title("Histogram of Close Prices (MIN-MAX of Whisker)")
-        plt.xlabel("Close Price")
+        plt.title(f"Histogram of {column_name} (MIN-MAX of Whisker)")
+        plt.xlabel(column_name)
         plt.ylabel("Frequency")
         plt.legend()
         plt.grid(axis='y', linestyle='--', alpha=0.7)
 
         # 2. Boxplot
         plt.subplot(1, 2, 2)
-        sns.boxplot(x=close, color="lightgreen")
-        # 目視しやすく範囲もMIN～MAX
+        sns.boxplot(x=feature_values, color="lightgreen")
         plt.axvline(min_in_range, color='blue', linestyle=':', label=f'MIN in Whisker: {min_in_range:.1f}')
         plt.axvline(max_in_range, color='blue', linestyle=':', label=f'MAX in Whisker: {max_in_range:.1f}')
         plt.axvline(median, color='orange', linestyle='-', label=f'Median (50%)')
         plt.text(median, plt.ylim()[1] * 0.05, "Median", ha='center', color='orange', weight='bold')
         plt.xlim(min_in_range, max_in_range)
-        plt.title("Boxplot of Close Prices (MIN-MAX of Whisker Data)")
-        plt.xlabel("Close Price")
+        plt.title(f"Boxplot of {column_name} (MIN-MAX of Whisker Data)")
+        plt.xlabel(column_name)
         plt.legend()
         plt.grid(axis='x', linestyle='--', alpha=0.7)
         plt.tight_layout()
         plt.show()
 
         # テキストログ出力
-        print("\n📦 IQR Stats")
+        print(f"\n📦 IQR Stats ({column_name})")
         print(f"Q1: {q1:.2f}, Q3: {q3:.2f}, IQR: {iqr:.2f}")
         print(f"Median: {median:.2f}, Mean: {mean:.2f}")
         print(f"Theoretical Lower Whisker (Q1 - 1.5*IQR): {lower_whisker_boundary:.2f}")
@@ -415,34 +335,77 @@ class BasicFeatureGeneratorV4(FeatureGeneratorBase, DjangoAppInitializer):
         print(f"\n🔹 Bin Counts within Whisker MIN-MAX:")
         print(bin_counts)
         
-    def process_all_parquet_files(self, threshold=65000):
-        """
-        Parquetファイルを全て自動でチェックし、Closeに閾値以上があればスキップしてファイル名を出力。
-        呼び出しのみで完結。何も返さない。
-        """
 
-        for file_path in self.__read_handler.files:
-            try:
-                df = pd.read_parquet(file_path)
-            except Exception as e:
-                print(f"読み込み失敗: {file_path}, error: {e}")
-                continue
+    def plot_log_distribution(self, column_name: str = "Close", threshold: float = 1e-4, bin_width: float = None):
+        import numpy as np
+        import pandas as pd
+        import matplotlib.pyplot as plt
 
-            if (df['Close'] >= threshold).any():
-                print(f"スキップ: Closeに{threshold}以上を検出 → {file_path}")
-                continue
+        # --- 1. 全ファイルからlog値集約（ここだけで十分） ---
+        log_values = []
+        for df in self.__read_handler.load_each(suffix=".parquet"):
+            valid = df[column_name]
+            valid = valid[valid > 0]
+            log_values.extend(np.log(valid).tolist())
+        log_values = pd.Series(log_values)
 
-            # ここに「通常の処理」を書く
-            # print(f"処理: {file_path}")
+        # --- 2. 分布確認・bin自動設定 ---
+        log_min = log_values.quantile(0.01)
+        log_max = log_values.quantile(0.99)
+        print(f"log_min (1%): {log_min:.2f}, log_max (99%): {log_max:.2f}")
 
-        print("全ファイル処理が完了しました。")
+        if bin_width is None:
+            bin_width = (log_max - log_min) / 20
+        print(f"bin_width: {bin_width:.2f}")
+
+        price_bins = np.arange(log_min, log_max + bin_width, bin_width)
+
+        # --- 3. bin割り当て・カウント ---
+        bin_indices = np.digitize(log_values, price_bins, right=False)
+        total_count = len(log_values)
+
+        from collections import Counter
+        counter = Counter(bin_indices)
+
+        # --- 4. ラベルと割合 ---
+        labels, percentages, bin_counts = [], [], []
+        for i in sorted(counter.keys()):
+            if i == 0:
+                label = f"-{price_bins[i]:.2f}"
+            elif i < len(price_bins):
+                label = f"{price_bins[i-1]:.2f}–{price_bins[i]:.2f}"
+            else:
+                label = f"{price_bins[-1]:.2f}+"
+            labels.append(label)
+            count = counter[i]
+            percentage = count / total_count * 100
+            percentages.append(percentage)
+            bin_counts.append(count)
+            print(f"{label}: {count}件 ({percentage:.4f}%)")
+        print(f"全体件数: {total_count}")
+
+        # --- 5. 描画 ---
+        plt.figure(figsize=(12, 5))
+        bars = plt.bar(labels, percentages, label=f'Percentage by Log({column_name}) Range', color='skyblue', edgecolor='black')
+        plt.plot(range(len(labels)), percentages, color='orange', marker='o', linestyle='-', linewidth=1.5, markersize=4, label='Trend Line')
+        plt.xticks(
+            ticks=np.arange(len(labels))[::2],
+            labels=[labels[i] for i in range(len(labels))][::2],
+            rotation=60, fontsize=8
+        )
+        plt.title(f"Distribution of Stocks by Log({column_name}) Range")
+        plt.ylabel("Percentage (%)")
+        plt.legend()
+        plt.tight_layout()
+        plt.show()
+
+
 
         
 if __name__ == "__main__":
     generator = BasicFeatureGeneratorV4()
-    # generator.plot_close_distribution(threshold=1e-4)
-    # generator.analyze_close_distribution(n_bins=50)
-    # generator.process_all_parquet_files(threshold=65000)
-    generator.make_transformed_data()
+    generator.analyze_feature_distribution(column_name="Volume",n_bins=50)
+    # generator.plot_log_distribution(column_name="Open", threshold=0, bin_width=0.2)
+    # generator.make_transformed_data()
     
 

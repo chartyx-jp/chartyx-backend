@@ -3,7 +3,7 @@ import pandas as pd
 from pathlib import Path
 from apps.common.utils import Utils
 from tqdm import tqdm
-from typing import Dict, Optional, Generator,List
+from typing import Dict, Optional, Generator,List, Union
 from apps.common.app_initializer import DjangoAppInitializer
 from django.conf import settings
 
@@ -120,7 +120,7 @@ class ParquetHandler(DjangoAppInitializer):
         finally:
             self.refresh_all_files()
 
-    def load(self, filename: str) -> pd.DataFrame:
+    def load(self, path:Path) -> pd.DataFrame:
         """
         __all_files の中から指定ファイルを探して読み込む。
 
@@ -130,12 +130,10 @@ class ParquetHandler(DjangoAppInitializer):
         Returns:
         - pd.DataFrame: 読み込んだデータ
         """
-        match = next((f for f in self.__all_files if f.name == filename), None)
+        if isinstance(path, str):
+            path = Path(path)
 
-        if not match:
-            raise FileNotFoundError(f"指定されたファイルが見つかりません: {filename}")
-
-        return pd.read_parquet(match)
+        return pd.read_parquet(path)
     
     def load_all(self, suffix: str = ".parquet") -> pd.DataFrame:
         """
@@ -152,7 +150,7 @@ class ParquetHandler(DjangoAppInitializer):
         for file in tqdm(self.__all_files, desc="ファイルを読み込んでいます"):
             if file.is_file() and file.suffix == suffix:
                 try:
-                    df = pd.read_parquet(file)
+                    df = self.load(file)
                     all_dfs.append(df)
                 except Exception as e:
                     self.log.error(f" 読み込み失敗: {file.name} - {e}")
@@ -176,7 +174,7 @@ class ParquetHandler(DjangoAppInitializer):
         for file in tqdm(self.__all_files, desc="ファイルを読み込んでいます"):
             if file.is_file() and file.suffix == suffix:
                 try:
-                    df = pd.read_parquet(file)
+                    df = self.load(file)
                     yield df
                 except Exception as e:
                     self.log.error(f" 読み込み失敗: {file.name} - {e}")
@@ -193,7 +191,7 @@ class ParquetHandler(DjangoAppInitializer):
     def has_more_batches(self) -> bool:
             return self.__current_batch_index * self.__batch_size < len(self.__all_files)
 
-    def load_batch(self, filenames: list[str]) -> pd.DataFrame:
+    def load_batch(self, files: list[Path]) -> pd.DataFrame:
         """
         指定されたファイル名リストに対して、対応するParquetファイルを読み込んで結合する。
 
@@ -205,12 +203,12 @@ class ParquetHandler(DjangoAppInitializer):
         """
         all_dfs = []
 
-        for filename in filenames:
+        for file in files:
             try:
-                df = self.load(filename)
+                df = self.load(file)
                 all_dfs.append(df)
             except Exception as e:
-                self.log.info(f" 読み込み失敗: {filename} - {e}")
+                self.log.info(f" 読み込み失敗: {file} - {e}")
 
         if not all_dfs:
             raise FileNotFoundError("バッチに読み込めるファイルが存在しません")
@@ -226,7 +224,7 @@ class ParquetHandler(DjangoAppInitializer):
             for f in tqdm(self.__all_files, desc="Reransforming files"):
                 try:
                     # ファイルを読み込む
-                    df = self.load(f.name)
+                    df = self.load(f)
                     # 列指定がある場合はその列のみを選択
                     if column is not None:
                         df = df[column]
@@ -238,7 +236,7 @@ class ParquetHandler(DjangoAppInitializer):
                     if handler is not None:
                         handler.save(df, f.name)
                     else:
-                        self.save(df, f)
+                        self.save(df, f.name)
 
                 except Exception as e:
                     self.log.error(f" 変換失敗: {f} - {e}")
@@ -263,29 +261,35 @@ class ParquetHandler(DjangoAppInitializer):
         """
 
         ticker_base = Utils.sanitize_ticker_for_filename(ticker_base)
-
+        
+        
         matching = [
             f for f in self.__all_files
-            if f.startswith(f"{ticker_base}_")
+            if str(f.name).startswith(f"{ticker_base}_")
         ]
         if not matching:
+            self.log.info(f"get_file_by_ticker: {ticker_base} → ファイルが見つかりません")
             return None
 
         if len(matching) > 1:
             self.log.info(f"[WARN] 複数ファイルが見つかりました for {ticker_base} → {matching}. 最初の1件を使用。")
 
-        return self.__directory / matching[0]
+        self.log.info("ファイル取得: " + str(matching[0]))
+        return matching[0]
 
-    def get_latest_row_by_ticker(self, ticker_base: str ,n:int = 1) -> Optional[pd.Series]:
+
+    def get_latest_row_by_ticker(self, ticker_base: str, n: int = 1) -> Optional[Union[pd.Series, pd.DataFrame]]:
+
         """
         - n < 10 の場合 → 該当の1行（Series）を返す（通常推論用）
         - n>=10 の場合 → 最新n行のDataFrameを返す（SHAP・分析用）
         """
         path = self.get_file_by_ticker(ticker_base)  # フルパスを取得
         if not path:
+            self.log.info(f"get_latest_row_by_ticker: {ticker_base} → ファイルが見つかりません")
             return None
-
         df = self.load(path)
+        self.log.info(f" データフレームの行数: {len(df)}")
         df["Date"] = pd.to_datetime(df["Date"])  # 念のため日付型に
         df_sorted = df.sort_values("Date")
 
@@ -297,7 +301,7 @@ class ParquetHandler(DjangoAppInitializer):
         else:
             return df_sorted.iloc[-n]  # 最終行（最新日）
         
-    def copy_tickerFile_to(self, target_dir: str, ticker_base: str = None) -> None:
+    def copy_tickerFile_to(self, target_dir: Path, ticker_base: str = None) -> None:
         """
         指定されたティッカーファイルをターゲットディレクトリにコピーする。
 
@@ -305,9 +309,12 @@ class ParquetHandler(DjangoAppInitializer):
         - target_dir: コピー先のディレクトリ（str or Path）
         - ticker_base: ティッカーファイルのベース名（例: '7203.T'）
         """
-        source_path = self.get_file_by_ticker(ticker_base)  # ← Path を返す前提
-        print(f"source_path: {source_path}")
-
+        
+        if ticker_base:
+            source_path:Path = self.get_file_by_ticker(ticker_base)  # ← Path を返す前提
+            print(f"source_path: {source_path}")
+        else:
+            source_path = self.__directory
         target_dir = Path(target_dir)
         target_dir.mkdir(parents=True, exist_ok=True)
 
