@@ -5,9 +5,23 @@ from django.db import transaction
 from django.utils import timezone
 import logging
 
+
 class DBOperator(DjangoAppInitializer):
-    def __init__(self,*args,**kwargs):
+    def __init__(self,model=None,*args,**kwargs):
         super().__init__(*args, **kwargs)
+        self.model = model
+    
+    def get_queryset(self):
+        if self.model is None:
+            raise ValueError("modelが指定されていません")
+        return self.model.objects
+    
+    def get_or_none(self, **kwargs):
+        # db情報取得できなければ、noneを返す
+        try:
+            return self.get_queryset().get(**kwargs)
+        except self.model.DoesNotExist:
+            return None
 
     def bulk_insert(self, model_class, objects, batch_size=100, ignore_conflicts=False):
         if not objects:

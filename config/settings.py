@@ -13,7 +13,9 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 from pathlib import Path
 import logging
 import sys
-
+import os
+from dotenv import load_dotenv
+load_dotenv()
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -208,3 +210,18 @@ REST_FRAMEWORK = {
         'rest_framework.renderers.JSONRenderer',
     ]
 }
+
+# mail設定
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+# ホスト
+EMAIL_HOST = os.getenv('SMTP_SERVER')
+# SMTPサーバーのポート番号
+EMAIL_PORT = int(os.getenv('SMTP_PORT', 587))
+EMAIL_HOST_USER = os.getenv('SENDER_EMAIL')
+# SMTPサーバーのパスワード (アプリパスワードを推奨)
+EMAIL_HOST_PASSWORD = os.getenv('SENDER_PASSWORD')
+# TLS/SSL暗号化を使用するかどうか
+EMAIL_USE_TLS = True
+EMAIL_USE_SSL = False
+DEFAULT_FROM_EMAIL = os.getenv('SENDER_EMAIL')
+SERVER_EMAIL = os.getenv('SENDER_EMAIL')
