@@ -40,6 +40,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'corsheaders',
 
     # 自作アプリ（apps/配下）
     'apps.ai',
@@ -59,7 +60,13 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
 ]
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",  # 開発中フロント
+    # "https://your-frontend.com",  # 本番フロント（将来追加）
+]
+
 
 ROOT_URLCONF = 'config.urls'
 
@@ -142,6 +149,10 @@ ANALYTICS_DATA_DIR = STOCK_DATA_DIR / 'analytics_data'
 PROCESSED_DATA_DIR = STOCK_DATA_DIR / 'processed_data'
 LEARNING_DATA_DIR = STOCK_DATA_DIR / 'learning_data'
 
+#クラスインスタンス
+from apps.stocks.services.parquet_handler import ParquetHandler
+PARQUET_HANDLER = ParquetHandler()
+
 
 # モデル格納ディレクトリ
 MODEL_DIR = BASE_DIR / 'apps' / 'ai' / 'ai_models' 
@@ -189,3 +200,11 @@ LOGGING = {
 }
 # ノートブック（AI/分析用）
 NOTEBOOK_DIR = BASE_DIR / 'notebooks'
+
+# Django REST Frameworkの設定
+# ここではJSONレンダラーのみを使用する設定
+REST_FRAMEWORK = {
+    'DEFAULT_RENDERER_CLASSES': [
+        'rest_framework.renderers.JSONRenderer',
+    ]
+}

@@ -1,5 +1,3 @@
-import os
-import sys
 import django
 import pandas as pd
 from apps.common.app_initializer import DjangoAppInitializer as Initializer
@@ -100,3 +98,10 @@ class Utils:
         # アルファベット、数字、日本語だけ残して、小文字に統一
         name = re.sub(r"[^\w\u3000-\u30FF\u4E00-\u9FFF]", "", name)
         return name.lower()
+
+    @staticmethod
+    def unix_to_datestr(series: pd.Series) -> pd.Series:
+        """
+        UNIXタイムスタンプを日付文字列に変換する。
+        """
+        return pd.to_datetime(series, unit='ms').dt.strftime('%Y/%m/%d')

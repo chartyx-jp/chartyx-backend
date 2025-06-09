@@ -21,9 +21,10 @@ class ParquetHandler(DjangoAppInitializer):
 
         self.__directory: Path = directory
         self.__batch_size = batch_size
-        self.__all_files = [f for f in self.__directory.iterdir()
-                        if f.is_file() and f.suffix == ".parquet"]
         self.__current_batch_index = 0
+        
+        # ディレクトリ内のparquetファイルを取得
+        self.refresh_all_files()
 
 
     @property
@@ -67,27 +68,6 @@ class ParquetHandler(DjangoAppInitializer):
         finally:
             self.refresh_all_files()  # 保存後にファイルリストを更新
         
-
-    def view_parquet_preview(self, filename: str) -> pd.DataFrame:
-        """
-        指定されたParquetファイルの最初のn行を表示するユーティリティ。
-
-        Parameters:
-        - filename (str): 読み込むParquetファイル名
-
-        Returns:
-        - pd.DataFrame: 指定ファイルのプレビュー
-        """
-        full_path = self.__directory / filename  # パス結合は / で
-
-        if not full_path.exists():  # Pathオブジェクトで存在確認
-            raise FileNotFoundError(f"ファイルが存在しません: {full_path}")
-
-        df = pd.read_parquet(full_path)
-        pd.set_option('display.max_columns', None)
-        self.log.info(f" プレビュー表示: {filename} | 行数: {len(df)} | カラム数: {df.shape[1]}")
-        return df
-
 
     def delete_all(self, suffix: str = ".parquet") -> int:
         """
@@ -135,30 +115,6 @@ class ParquetHandler(DjangoAppInitializer):
 
         return pd.read_parquet(path)
     
-    def load_all(self, suffix: str = ".parquet") -> pd.DataFrame:
-        """
-        指定ディレクトリ内のparquetファイルを一括読み込み。
-
-        Parameters:
-        - suffix: ファイル名のフィルタリング条件（例: "_complete.parquet"）
-
-        Returns:
-        - pd.DataFrame: すべてのファイルを結合したDataFrame
-        """
-        all_dfs = []
-
-        for file in tqdm(self.__all_files, desc="ファイルを読み込んでいます"):
-            if file.is_file() and file.suffix == suffix:
-                try:
-                    df = self.load(file)
-                    all_dfs.append(df)
-                except Exception as e:
-                    self.log.error(f" 読み込み失敗: {file.name} - {e}")
-
-        if not all_dfs:
-            raise FileNotFoundError(f" '{suffix}' は {self.__directory} に存在しません")
-
-        return pd.concat(all_dfs, ignore_index=True)
 
     def load_each(self, suffix: str = ".parquet") -> Generator[pd.DataFrame, None, None]:
         """
@@ -262,7 +218,6 @@ class ParquetHandler(DjangoAppInitializer):
 
         ticker_base = Utils.sanitize_ticker_for_filename(ticker_base)
         
-        
         matching = [
             f for f in self.__all_files
             if str(f.name).startswith(f"{ticker_base}_")
@@ -311,7 +266,7 @@ class ParquetHandler(DjangoAppInitializer):
         """
         
         if ticker_base:
-            source_path:Path = self.get_file_by_ticker(ticker_base)  # ← Path を返す前提
+            source_path:Optional[Path] = self.get_file_by_ticker(ticker_base)  # ← Path を返す前提
             print(f"source_path: {source_path}")
         else:
             source_path = self.__directory
@@ -321,8 +276,7 @@ class ParquetHandler(DjangoAppInitializer):
         target_path = target_dir / source_path.name
         shutil.copy2(source_path, target_path)
 
-
-    def calc_flat_target_ratio(self, threshold: float = 1e-4) -> float:
+    # def calc_flat_target_ratio(self, threshold: float = 1e-4) -> float:
         """
         Target列の変動が閾値以下の行が、全行のうち何％あるかを返す。
 
