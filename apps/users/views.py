@@ -51,16 +51,14 @@ class SignupAPIView(APIView):
         member_data['password'] = hash_password(member_data['password'])
         try:
             member = UserManager.create_member(member_data)
-            
             #レスポンスのSTATUSはステータスコードで判定できるから↓の”登録完了しました等は不要でいいよ！！ エラーの時にどんな内容かわかればOK”
-            return Response({'status': '登録完了しました。', 'member_id': member.id}, status=status.HTTP_201_CREATED)
-        
+            return Response({'member_id': member.id}, status=status.HTTP_201_CREATED)
         except IntegrityError as e:
             # UNIQUE制約違反の場合は400で特定メッセージ
-            return Response({'status': '登録に失敗しました。', 'error': 'このメールアドレスは既に登録されています。'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': '登録に失敗/このメールアドレスは既に登録済'}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             print(f"登録エラー: {e}")
-            return Response({'status': '登録に失敗しました。', 'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': '登録に失敗'+ str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 class LoginAPIView(APIView):
     def post(self, request):
@@ -73,26 +71,24 @@ class LoginAPIView(APIView):
             otp_expiration_time = time.time() + 300
             otp_storage[member.id] = {'otp': otp, 'expires_at': otp_expiration_time}
             if send_otp_email(email, otp):
-                return Response({'status': 'OTP送信完了', 'member_id': member.id}, status=status.HTTP_202_ACCEPTED)
+                return Response({'member_id': member.id}, status=status.HTTP_202_ACCEPTED)
             else:
-                return Response({'status': 'OTPメール送信失敗', 'error': 'メール送信中にエラーが発生しました。'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                return Response({'error': 'OTPメール送信失敗/メール送信中にエラーが発生しました。'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         else:
-            return Response({'status': 'ログイン失敗', 'error':'メールアドレスまたはパスワードが違うよ'}, status=status.HTTP_401_UNAUTHORIZED)
+            return Response({'error':'ログイン失敗/メールアドレスまたはパスワードが違う'}, status=status.HTTP_401_UNAUTHORIZED)
 
 class LogoutAPIView(APIView):
     def post(self, request):
         try:
             if 'member_id' in request.session:
                 del request.session['member_id']
-            return Response({'status': 'ログアウト成功'}, status=status.HTTP_200_OK)
+            return Response(status=status.HTTP_200_OK)
         except Exception as e:
-            return Response({'status': 'ログアウトに失敗しました。', 'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error':'ログアウトに失敗' + str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 class OTPVerifyAPIView(APIView):
     def post(self, request):
         data = request.data
-        
-        #userId なのか member_id なのかはっきりさせておいてちょ
         member_id = data.get('member_id')
         entered_otp = data.get('otp')
         if member_id not in otp_storage:
@@ -113,22 +109,20 @@ class OTPVerifyAPIView(APIView):
 class PlanSettingsAPIView(APIView):
     def post(self, request):
         data = request.data
-        
-        #ここね９５行目のやつ
-        userId = data.get('userId')
+        member_id = data.get('member_id')
         plan = data.get('plan')
-        member = UserManager.update_member(userId, {'plan': plan, 'subscriptionRegistrationDate': datetime.date.today()})
+        member = UserManager.update_member(member_id, {'plan': plan, 'subscriptionRegistrationDate': datetime.date.today()})
         if member:
-            return Response({'status': 'プラン変更成功。'}, status=status.HTTP_200_OK)
+            return Response(status=status.HTTP_200_OK)
         else:
             return Response({'status': '会員情報が見つかりません。'}, status=status.HTTP_404_NOT_FOUND)
 
 class ProfileSettingsAPIView(APIView):
     def get(self, request):
-        userId = request.GET.get('userId')
-        if not userId:
-            return Response({'error': 'userIdが指定されていません。'}, status=status.HTTP_400_BAD_REQUEST)
-        member = UserManager.update_member(userId, {})  # 取得専用のgetメソッド作ってもいい
+        member_id = request.GET.get('member_id')
+        if not member_id:
+            return Response({'error': 'member_idが指定されていません。'}, status=status.HTTP_400_BAD_REQUEST)
+        member = UserManager.update_member(member_id, {})  # 取得専用のgetメソッド作ってもいい
         if member:
             member_data = {
                 'firstName': member.firstName,
@@ -145,21 +139,21 @@ class ProfileSettingsAPIView(APIView):
 
     def post(self, request):
         data = request.data
-        userId = data.get('userId')
+        member_id = data.get('member_id')
         member_data = get_member_data(data)
-        member = UserManager.update_member(userId, member_data)
+        member = UserManager.update_member(member_id, member_data)
         if member:
-            return Response({'status': 'ユーザー情報変更成功'}, status=status.HTTP_200_OK)
+            return Response(status=status.HTTP_200_OK)
         else:
             return Response({'status': '会員情報が見つかりません。'}, status=status.HTTP_404_NOT_FOUND)
 
 class DeleteAccountAPIView(APIView):
     def post(self, request):
         data = request.data
-        userid = data.get('userId')
+        member_id = data.get('member_id')
         emailAddress = data.get('emailAddress')
-        success = UserManager.delete_member(userid, emailAddress)
+        success = UserManager.delete_member(member_id, emailAddress)
         if success:
-            return Response({'status': 'アカウント削除成功'}, status=status.HTTP_200_OK)
+            return Response(status=status.HTTP_200_OK)
         else:
             return Response({'status': '会員情報が見つかりません。'}, status=status.HTTP_404_NOT_FOUND)
