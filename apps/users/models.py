@@ -12,13 +12,13 @@ class Member(models.Model):
         PREMIUM = 'P', 'Premium'
 
     # userId = models.PositiveIntegerField(unique=True)  # INT UNSIGNED
-    firstName = models.CharField(max_length=50)
-    lastName = models.CharField(max_length=50)
+    firstName = models.CharField(max_length=50, null=True, blank=True)
+    lastName = models.CharField(max_length=50 , null=True, blank=True)
     gender = models.CharField(max_length=1, choices=Gender.choices, blank=True, null=True)
     birthday = models.DateField(blank=True, null=True)
-    emailAddress = models.EmailField(unique=False)
+    emailAddress = models.EmailField(unique=True, max_length=254)  # ユニークなメールアドレス
     phoneNumber = models.CharField(max_length=15, blank=True, null=True)
-    password = models.CharField(max_length=128)
+    password = models.CharField(max_length=64)
     address = models.TextField(blank=True, null=True)
     plan = models.CharField(max_length=1, choices=Plan.choices, default=Plan.FREE, null=True) #プラン情報
     userRegistrationDate = models.DateTimeField(auto_now_add=True)

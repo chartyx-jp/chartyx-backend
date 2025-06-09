@@ -30,7 +30,9 @@ SECRET_KEY = 'django-insecure-lpnplpt2s_lp+4p71_z!2)@hf!e*(vykraf6**khxz+&(s3&g6
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['*']    
+# テスト用途なら ['*'] でも通ります（本番では×）
+
 
 
 # Application definition
@@ -64,6 +66,11 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'corsheaders.middleware.CorsMiddleware',
 ]
+
+# CORS_ALLOW_ALL_ORIGINS = True
+
+CORS_ALLOW_CREDENTIALS = True
+
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",  # 開発中フロント
     # "https://your-frontend.com",  # 本番フロント（将来追加）

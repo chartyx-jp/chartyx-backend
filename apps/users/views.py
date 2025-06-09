@@ -76,16 +76,19 @@ def send_otp_email(receiver_email, otp):
 
 #@csrf_exempt はAPI用途でCSRFチェックを無効化（本番ではトークン認証等を推奨）。
 #signup-会員登録
-@csrf_exempt    
+@csrf_exempt
 def signup(request):
     if request.method == 'POST':
         try:
             data = json.loads(request.body)
+            print(data)
             member_data = get_member_data(data)
             member_data['password'] = hash_password(member_data['password'])
             member = Member.objects.create(**member_data)
+            print(member)
             return JsonResponse({'status': '登録完了しました。', 'member_id':member.id}, status=201)
         except Exception as e:
+            print(f"登録エラー: {e}")
             return JsonResponse({'status': '登録に失敗しました。', 'error': str(e)}, status=400)
     else:
         return JsonResponse({'error': 'POST request required'}, status=405)
