@@ -1,17 +1,22 @@
-from django.urls import path, include
-from . import views
+from django.urls import path
+from .views import (
+    SignupAPIView,
+    LoginAPIView,
+    LogoutAPIView,
+    OTPVerifyAPIView,
+    PlanSettingsAPIView,
+    ProfileSettingsAPIView,
+    DeleteAccountAPIView,
+    # ForgotPasswordAPIView,  # 実装済みなら
+)
 
-#会員登録、ログイン、ログアウト、OPT入力、プラン変更、ユーザー情報変更、アカウント削除、パスワード忘れ
 urlpatterns = [
-    path('signup', views.signup, name='signup'),
-    path('login', views.login, name='login'),
-    path('logout', views.logout, name='logout'),
-    path('sendAuthCodeEmail', views.sendAuthCodeEmail, name='sendAuthCodeEmail'),
-    # path('verify-otp', views.verifyOTP, name='verifyOTP'),
-    path('planSettings', views.planSettings, name='planSettings'),
-    path('profileSettings', views.profileSettings, name='profileSettings'),
-    path('deleteAccount', views.deleteAccount, name='deleteAccount'),
-    # path('forgotPassword', views.forgotPassword, name='forgotPassword'),
+    path('signup/', SignupAPIView.as_view(), name='signup'),
+    path('login/', LoginAPIView.as_view(), name='login'),
+    path('logout/', LogoutAPIView.as_view(), name='logout'),
+    path('verify-otp/', OTPVerifyAPIView.as_view(), name='verify_otp'),
+    path('plan-settings/', PlanSettingsAPIView.as_view(), name='plan_settings'),
+    path('profile-settings/', ProfileSettingsAPIView.as_view(), name='profile_settings'),
+    path('delete-account/', DeleteAccountAPIView.as_view(), name='delete_account'),
+    # path('forgot-password/', ForgotPasswordAPIView.as_view(), name='forgot_password'),  # 実装済みなら
 ]
-
-

@@ -33,7 +33,10 @@ DEBUG = True
 ALLOWED_HOSTS = ['*']    
 # テスト用途なら ['*'] でも通ります（本番では×）
 
-
+# セッション設定
+SESSION_ENGINE = 'django.contrib.sessions.backends.db'  # サーバー側DB
+SESSION_COOKIE_HTTPONLY = True         # JSでアクセスできない
+# SESSION_COOKIE_SECURE = True  # 本番HTTPSならTrue推奨
 
 # Application definition
 
@@ -44,6 +47,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    "rest_framework",
     'corsheaders',
 
     # 自作アプリ（apps/配下）
@@ -132,7 +136,7 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'ja'
 
-TIME_ZONE = 'asia/tokyo'
+TIME_ZONE = 'Asia/Tokyo'
 
 USE_I18N = True
 
