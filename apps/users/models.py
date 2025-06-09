@@ -5,16 +5,22 @@ class Member(models.Model):
         MALE = 'M', 'Male'
         FEMALE = 'F', 'Female'
         OTHER = 'O', 'Other'
+    
+    class Plan(models.TextChoices):
+        FREE = 'F', 'Free'
+        BASIC = 'B', 'Basic'
+        PREMIUM = 'P', 'Premium'
 
-    userId = models.PositiveIntegerField(unique=True)  # INT UNSIGNED
+    # userId = models.PositiveIntegerField(unique=True)  # INT UNSIGNED
     firstName = models.CharField(max_length=50)
     lastName = models.CharField(max_length=50)
     gender = models.CharField(max_length=1, choices=Gender.choices, blank=True, null=True)
     birthday = models.DateField(blank=True, null=True)
-    emailAddress = models.EmailField(unique=True)
+    emailAddress = models.EmailField(unique=False)
     phoneNumber = models.CharField(max_length=15, blank=True, null=True)
     password = models.CharField(max_length=128)
     address = models.TextField(blank=True, null=True)
+    plan = models.CharField(max_length=1, choices=Plan.choices, default=Plan.FREE, null=True) #プラン情報
     userRegistrationDate = models.DateTimeField(auto_now_add=True)
     subscriptionRegistrationDate = models.DateTimeField(blank=True, null=True)
     status = models.BooleanField(default=True)  # ステータス（アクティブ/非アクティブ）
