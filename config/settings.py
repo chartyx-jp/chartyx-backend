@@ -36,6 +36,7 @@ ALLOWED_HOSTS = ['*']
 # セッション設定
 SESSION_ENGINE = 'django.contrib.sessions.backends.db'  # サーバー側DB
 SESSION_COOKIE_HTTPONLY = True         # JSでアクセスできない
+CSRF_COOKIE_HTTPONLY = True # 推奨
 # SESSION_COOKIE_SECURE = True  # 本番HTTPSならTrue推奨
 
 # Application definition

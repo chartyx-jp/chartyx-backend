@@ -1,22 +1,36 @@
+# apps/users/urls.py (またはプロジェクト全体のurls.pyでincludeする場合)
+
 from django.urls import path
 from .views import (
     SignupAPIView,
     LoginAPIView,
     LogoutAPIView,
-    OTPVerifyAPIView,
+    OTPVerifyAPIView, # これはログイン時のOTP検証用として残す
     PlanSettingsAPIView,
     ProfileSettingsAPIView,
     DeleteAccountAPIView,
-    # ForgotPasswordAPIView,  # 実装済みなら
+    CheckEmailAvailabilityAPIView,
+    SendOtpForSignupAPIView,
+    VerifyOtpForSignupAPIView,
+    # ForgotPasswordAPIView, # 実装済みなら
 )
 
 urlpatterns = [
-    path('signup/', SignupAPIView.as_view(), name='signup'),
-    path('login/', LoginAPIView.as_view(), name='login'),
-    path('logout/', LogoutAPIView.as_view(), name='logout'),
-    path('verify-otp/', OTPVerifyAPIView.as_view(), name='verify_otp'),
-    path('plan-settings/', PlanSettingsAPIView.as_view(), name='plan_settings'),
-    path('profile-settings/', ProfileSettingsAPIView.as_view(), name='profile_settings'),
-    path('delete-account/', DeleteAccountAPIView.as_view(), name='delete_account'),
-    # path('forgot-password/', ForgotPasswordAPIView.as_view(), name='forgot_password'),  # 実装済みなら
+    # --- サインアップフローのAPI ---
+    path('auth/check-email/', CheckEmailAvailabilityAPIView.as_view(), name='auth_check_email'),
+    path('auth/send-otp-signup/', SendOtpForSignupAPIView.as_view(), name='auth_send_otp_signup'),
+    path('auth/verify-otp-signup/', VerifyOtpForSignupAPIView.as_view(), name='auth_verify_otp_signup'),
+    path('auth/signup/', SignupAPIView.as_view(), name='auth_signup'), # 最終的なサインアップ
+
+    # --- ログインフローのAPI ---
+    path('auth/login/', LoginAPIView.as_view(), name='auth_login'),
+    path('auth/verify-otp-login/', OTPVerifyAPIView.as_view(), name='auth_verify_otp_login'), # ログイン時のOTP検証
+
+    # --- ユーザー設定・管理API ---
+    path('user/logout/', LogoutAPIView.as_view(), name='user_logout'),
+    path('user/plan-settings/', PlanSettingsAPIView.as_view(), name='user_plan_settings'),
+    path('user/profile-settings/', ProfileSettingsAPIView.as_view(), name='user_profile_settings'),
+    path('user/delete-account/', DeleteAccountAPIView.as_view(), name='user_delete_account'),
+
+    # path('auth/forgot-password/', ForgotPasswordAPIView.as_view(), name='auth_forgot_password'), # パスワード忘れAPI
 ]
