@@ -27,10 +27,10 @@ urlpatterns = [
     path('auth/verify-otp-login/', OTPVerifyAPIView.as_view(), name='auth_verify_otp_login'), # ログイン時のOTP検証
 
     # --- ユーザー設定・管理API ---
-    path('user/logout/', LogoutAPIView.as_view(), name='user_logout'),
-    path('user/plan-settings/', PlanSettingsAPIView.as_view(), name='user_plan_settings'),
-    path('user/profile-settings/', ProfileSettingsAPIView.as_view(), name='user_profile_settings'),
-    path('user/delete-account/', DeleteAccountAPIView.as_view(), name='user_delete_account'),
+    path('logout/', LogoutAPIView.as_view(), name='user_logout'),
+    path('plan-settings/', PlanSettingsAPIView.as_view(), name='user_plan_settings'),
+    path('profile-settings/', ProfileSettingsAPIView.as_view(), name='user_profile_settings'),
+    path('delete-account/', DeleteAccountAPIView.as_view(), name='user_delete_account'),
 
     # path('auth/forgot-password/', ForgotPasswordAPIView.as_view(), name='auth_forgot_password'), # パスワード忘れAPI
 ]

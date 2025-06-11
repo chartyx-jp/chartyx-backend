@@ -7,10 +7,16 @@ from django.conf import settings
 from .services.user_manager import UserManager
 from apps.users.services.authenticator import Authenticator 
 from django.db import IntegrityError
+from django.contrib.auth import login,logout
+from rest_framework.permissions import IsAuthenticated
 from typing import Optional, Dict, Any, Tuple
 import logging
 import time 
 import datetime
+
+#開発用
+from django.utils.decorators import method_decorator
+from django.views.decorators.csrf import csrf_exempt
 
 logger = logging.getLogger(__name__)
 
@@ -19,8 +25,8 @@ class CheckEmailAvailabilityAPIView(APIView):
     """
     メールアドレスが既に登録済みかを確認するAPIビュー。
     """
-    def post(self, request) -> Response:
-        email_address: Optional[str] = request.data.get('emailAddress')
+    def get(self, request) -> Response:
+        email_address: Optional[str] = request.query_params.get('emailAddress').strip() if request.query_params.get('emailAddress') else None
 
         if not email_address:
             logger.warning("メールアドレス存在確認失敗: メールアドレスが提供されていません。")
@@ -49,6 +55,7 @@ class SendOtpForSignupAPIView(APIView):
     新規登録のためにOTPを生成し、メールアドレスに送信するAPIビュー。
     未登録のメールアドレスにのみ送信を許可します。
     """
+    
     def post(self, request) -> Response:
         email_address: Optional[str] = request.data.get('emailAddress')
 
@@ -125,7 +132,7 @@ class VerifyOtpForSignupAPIView(APIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
-# --- 既存APIの修正 ---
+
 
 class SignupAPIView(APIView):
     """
@@ -164,13 +171,10 @@ class SignupAPIView(APIView):
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-
-            # パスワードをハッシュ化して安全に保存
-            hashed_password: str = Authenticator.hash_password(plain_password)
             
             member_data_for_creation: Dict[str, Any] = {
                 'emailAddress': authenticated_email, # ここでセッションから取得した認証済みメールアドレスを使用
-                'password': hashed_password,
+                'password': plain_password,
                 # その他の必須フィールドをリクエストデータから取得し、UserManagerで処理されるように渡す
                 'firstName': data.get('firstName'),
                 'lastName': data.get('lastName'),
@@ -180,21 +184,25 @@ class SignupAPIView(APIView):
                 'address': data.get('address')
             }
             
-            # UserManagerのformat_required_member_dataでさらに整形が必要な場合
-            final_member_data = UserManager.format_required_member_data(member_data_for_creation)
             
-            member = UserManager.create_member(final_member_data)
-            
+            member = UserManager.create_member(member_data_for_creation)
+            if member:
+                login(request, member)  # Djangoのログイン処理を呼び出す
             # サインアップ成功後、セッションからOTP関連データをクリア
-            Authenticator.clear_signup_otp_session(request.session)
+                Authenticator.clear_signup_otp_session(request.session)
             
-            logger.info(f"新規メンバーが作成されました: ID={member.id}, Email={member.emailAddress}")
-            return Response(status=status.HTTP_201_CREATED)
-            
-        except IntegrityError:
+                logger.info(f"新規メンバーが作成されました: ID={member.id}, Email={member.emailAddress}")
+                return Response(status=status.HTTP_201_CREATED)
+            else:
+                logger.error(f"サインアップ失敗: メンバーの作成に失敗しました。メールアドレス: {authenticated_email}")
+                return Response(
+                    {'error': 'サインアップ中にエラーが発生しました。しばらくしてから再度お試しください。'},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+        except IntegrityError as e:
             logger.warning(f"サインアップ失敗: 既存のメールアドレス '{authenticated_email}' が使用されました。OTP認証済みだが、既に登録済み。")
             return Response(
-                {'error': '登録に失敗しました。このメールアドレスは既に登録済みです。'},
+                {'error': f'登録に失敗しました。このメールアドレスは既に登録済みです。{e}'},
                 status=status.HTTP_400_BAD_REQUEST
             )
         except Exception as e:
@@ -204,13 +212,12 @@ class SignupAPIView(APIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
-# --- ログインAPI (OTPによる2段階認証はそのまま) ---
-# このAPIはサインアップ後の通常のログインフローで使用します。
 
 class LoginAPIView(APIView):
     """
     ユーザーログインと2段階認証 (OTP) の開始のためのAPIビュー。
     """
+    
     def post(self, request) -> Response:
         data: Dict[str, Any] = request.data
         email: Optional[str] = data.get('emailAddress')
@@ -227,21 +234,25 @@ class LoginAPIView(APIView):
             member = UserManager.search_member_by_email(email)
             
             if member and Authenticator.check_password(plain_password, member.password):
-                otp: str = Authenticator.generate_otp()
+                # otp: str = Authenticator.generate_otp()
                 # ログインフロー用のOTPをセッションに保存（メールアドレスをキーのプレフィックスに含める）
                 # Authenticator.store_otp_for_login は Authenticatorクラスに別途実装が必要です
                 # 今回は既存の store_otp_in_session を is_signup_flow=False で呼び出す形で仮対応
                 # (Authenticator.store_otp_in_session の is_signup_flow=False 時のロジックも適切に修正してください)
                 # より堅牢には、store_otp_for_login(request.session, member.id, otp) のようなメソッドが望ましい
-                request.session[f"{Authenticator.LOGIN_OTP_SESSION_KEY_PREFIX}{member.id}"] = { # member.idをキーにする
-                    'otp': otp,
-                    'expires_at': time.time() + Authenticator.OTP_EXPIRATION_SECONDS
-                }
-                request.session.modified = True
+                # request.session[f"{Authenticator.LOGIN_OTP_SESSION_KEY_PREFIX}{member.id}"] = { # member.idをキーにする
+                #     'otp': otp,
+                #     'expires_at': time.time() + Authenticator.OTP_EXPIRATION_SECONDS
+                # }
+                # request.session.modified = True
                 
-                logger.info(f"ログイン試行成功、OTPを送信しました: MemberID={member.id}, Email={email}")
-                # フロントエンドには、次のOTP検証ステップのためにmember_idを返す
-                return Response({'member_id': member.id, 'message': '認証コードを送信しました。'}, status=status.HTTP_202_ACCEPTED)
+                # logger.info(f"ログイン試行成功、OTPを送信しました: MemberID={member.id}, Email={email}")
+                # # フロントエンドには、次のOTP検証ステップのためにmember_idを返す
+                
+                login(request, member)  # Djangoのログイン処理を呼び出す これでUserインスタンスをSESSIONにセット
+                
+                user  = request.user                
+                return Response({"message": "ログイン成功。2段階認証のOTPを送信しました。", "id": user.id},status=status.HTTP_202_ACCEPTED)
             else:
                 logger.warning(f"ログイン失敗: 無効な認証情報。メールアドレス: '{email}'")
                 return Response(
@@ -327,12 +338,10 @@ class LogoutAPIView(APIView):
     """
     def post(self, request) -> Response:
         try:
-            member_id = request.session.get('member_id') # セッションから取得
-
-            if member_id: # member_idがセッションにあればログアウト処理
-                del request.session['member_id']
-                request.session.modified = True
-                logger.info(f"メンバーID {member_id} がログアウトしました。")
+            user = request.user
+            if user: # member_idがセッションにあればログアウト処理
+                logout(request)  # Djangoのログアウト処理を呼び出す
+                logger.info(f"メンバーID {user.id} がログアウトしました。")
             else:
                 logger.info("セッションにmember_idがない状態でログアウトリクエストがありました。")
             return Response(status=status.HTTP_200_OK)
@@ -487,53 +496,34 @@ class ProfileSettingsAPIView(APIView):
 
 class DeleteAccountAPIView(APIView):
     """
-    ユーザーアカウントの削除のためのAPIビュー。
+    ログイン中のユーザー自身のアカウントを削除するAPIビュー。
     """
-    def post(self, request) -> Response:
-        # member_id はリクエストボディからではなく、セッションから取得する
-        current_member_id: Optional[int] = request.session.get('member_id')
-        if not current_member_id:
-            logger.warning("アカウント削除失敗: 認証されていません。")
-            return Response({'error': '認証されていません。再ログインしてください。'}, status=status.HTTP_401_UNAUTHORIZED)
+    permission_classes = [IsAuthenticated]
 
-        data: Dict[str, Any] = request.data
-        # メールアドレスは確認のためにリクエストボディから受け取る
-        email_address_from_request: Optional[str] = data.get('emailAddress')
-
-        if not email_address_from_request:
-            logger.warning(f"アカウント削除失敗: メールアドレスが提供されていません。MemberID={current_member_id}")
-            return Response(
-                {'error': 'メールアドレスは必須です。'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+    def delete(self, request) -> Response:
+        user = request.user  # セッションから自動で取得されたUserオブジェクト
         
-        try:
-            # 削除対象のユーザーを取得し、提供されたメールアドレスが一致するか確認
-            member_to_delete = UserManager.get_member_by_id(current_member_id)
-            if not member_to_delete or member_to_delete.emailAddress != email_address_from_request:
-                logger.warning(f"アカウント削除失敗: メンバーID {current_member_id} またはメールアドレス '{email_address_from_request}' が一致しません。")
-                return Response(
-                    {'error': '認証情報が一致しません。'},
-                    status=status.HTTP_403_FORBIDDEN # 権限がない、または情報が不一致
-                )
+        
+        # email_from_request = request.data.get("emailAddress")
 
-            success: bool = UserManager.delete_member(current_member_id, email_address_from_request) # セッションのIDとリクエストのメールアドレス
-            if success:
-                logger.info(f"メンバーID {current_member_id} のアカウントを削除しました。")
-                # アカウント削除成功後、セッションも破棄する
-                if 'member_id' in request.session:
-                    del request.session['member_id']
-                    request.session.modified = True
-                return Response(status=status.HTTP_200_OK)
-            else:
-                logger.error(f"アカウント削除失敗（予期せぬ状態）：MemberID {current_member_id} のDB削除に失敗。")
-                return Response(
-                    {'error': 'アカウント削除に失敗しました。'},
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
-                )
+        # if not email_from_request:
+        #     logger.warning(f"アカウント削除失敗: メールアドレスが提供されていません。UserID={user.id}")
+        #     return Response({'error': 'メールアドレスは必須です。'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # if user.email != email_from_request:
+        #     logger.warning(f"アカウント削除失敗: メールアドレス不一致 UserID={user.id}, email={user.email}")
+        #     return Response({'error': 'メールアドレスが一致しません。'}, status=status.HTTP_403_FORBIDDEN)
+
+        try:
+            logger.info(f"ユーザーID {user.id} のアカウントを削除します。")
+            user.delete()
+
+            # セッション破棄（ログアウト処理）
+            logout(request)
+
+            return Response({'message': 'アカウントを削除しました。'}, status=status.HTTP_200_OK)
+
         except Exception as e:
-            logger.exception(f"アカウント削除中に予期せぬエラーが発生しました。MemberID={current_member_id}")
-            return Response(
-                {'error': f'アカウント削除中に予期せぬエラーが発生しました。 ({e})'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+            logger.exception(f"アカウント削除中にエラー: UserID={user.id}")
+            return Response({'error': f'アカウント削除中にエラーが発生しました: {e}'},
+                            status=status.HTTP_500_INTERNAL_SERVER_ERROR)

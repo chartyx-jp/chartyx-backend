@@ -2,6 +2,7 @@
 from apps.users.models import Member
 import hashlib, time, secrets, string, datetime
 from django.core.exceptions import ObjectDoesNotExist
+from django.contrib.auth.hashers import make_password
 from typing import Optional, Dict, Any
 
 class UserManager:
@@ -16,7 +17,7 @@ class UserManager:
         Returns:
             Member: 新しく作成されたMemberオブジェクト。
         """
-        member = Member.objects.create(**data)
+        member = Member.objects.create_user(**data)  # type: ignore
         return member
 
 
@@ -111,23 +112,29 @@ class UserManager:
         
         
     @staticmethod
-    def format_required_member_data(data: Dict[str, Any]) -> Dict[str, Optional[Any]]:
+    def format_required_member_data(data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        提供されたデータから、メンバー（ユーザー）の必須項目を抽出し整形します。
-        パスワードは自動でハッシュ化します。
+        提供されたデータから、Memberモデルの全フィールド名に対応するデータ辞書を生成します。
+        パスワードフィールドは自動でハッシュ化し、値がNoneの場合はdefault値を効かせるためにdictから除外します。
 
         Args:
-            data (Dict[str, Any]): メンバーデータを含む辞書。
+            data (Dict[str, Any]): メンバーデータを含む辞書
 
         Returns:
-            Dict[str, Optional[Any]]: 必須項目とそれに対応する値を含む辞書。
+            Dict[str, Any]: Memberモデルへのcreate用データ辞書（None値は除外）
         """
         member_fields = [field.name for field in Member._meta.fields]
-        return {
-            k: UserManager._generate_hash_password(data.get(k)) if k == "password" and data.get(k) is not None else data.get(k)
+        # 一時的な辞書。passwordはハッシュ化、それ以外は生値
+        raw_dict: Dict[str, Any] = {
+            k: UserManager._generate_hash_password(data.get(k))
+                if k == "password" and data.get(k) is not None
+                else data.get(k)
             for k in member_fields
         }
+        # None値は除外（defaultを効かせる）
+        return {k: v for k, v in raw_dict.items() if v is not None}
+        
         
     @staticmethod
-    def _generate_hash_password(password:str) -> str:
-        return hashlib.sha256(password.encode()).hexdigest()
+    def _generate_hash_password(password: str) -> str:
+        return make_password(password)

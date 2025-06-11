@@ -36,7 +36,7 @@ ALLOWED_HOSTS = ['*']
 # セッション設定
 SESSION_ENGINE = 'django.contrib.sessions.backends.db'  # サーバー側DB
 SESSION_COOKIE_HTTPONLY = True         # JSでアクセスできない
-CSRF_COOKIE_HTTPONLY = True # 推奨
+CSRF_COOKIE_HTTPONLY = False # JSでアクセス可能（API連携のため）
 # SESSION_COOKIE_SECURE = True  # 本番HTTPSならTrue推奨
 
 # Application definition
@@ -62,6 +62,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware', 
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -69,7 +70,6 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    'corsheaders.middleware.CorsMiddleware',
 ]
 
 # CORS_ALLOW_ALL_ORIGINS = True
@@ -112,6 +112,7 @@ DATABASES = {
     }
 }
 
+AUTH_USER_MODEL = 'users.Member'  # カスタムユーザーモデルを指定
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
