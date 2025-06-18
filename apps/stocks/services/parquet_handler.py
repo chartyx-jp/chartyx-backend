@@ -85,7 +85,7 @@ class ParquetHandler(DjangoAppInitializer):
             for file in self.__all_files:
                 if file.is_file() and file.suffix(suffix):
                     try:
-                        file.unlink()  # ← Pathオブジェクトの削除メソッド
+                        file.unlink()
                         deleted += 1
                         self.log.info(f" 削除: {file.name}")
                     except Exception as e:
@@ -275,6 +275,22 @@ class ParquetHandler(DjangoAppInitializer):
 
         target_path = target_dir / source_path.name
         shutil.copy2(source_path, target_path)
+        
+    
+    def get_all_tickers(self) -> List[str]:
+        """
+        ディレクトリ内のすべてのティッカーを取得する。
+        ファイル名からティッカー部分を抽出してリストで返す。
+
+        Returns:
+        - List[str]: ティッカーのリスト
+        """
+        tickers = []
+        for file in self.__all_files:
+            if file.is_file() and file.suffix == ".parquet":
+                ticker = file.stem.split("_")[0]
+                tickers.append(ticker)
+        return sorted(set(tickers))
 
     # def calc_flat_target_ratio(self, threshold: float = 1e-4) -> float:
         """

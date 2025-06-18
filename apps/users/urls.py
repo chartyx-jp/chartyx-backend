@@ -1,11 +1,13 @@
 # apps/users/urls.py (またはプロジェクト全体のurls.pyでincludeする場合)
 
 from django.urls import path
-from .views import (
+from apps.users.views import (
+    GetCSRFTokenView,
+    UserInfoView,
     SignupAPIView,
     LoginAPIView,
     LogoutAPIView,
-    OTPVerifyAPIView, # これはログイン時のOTP検証用として残す
+    #OTPVerifyAPIView, # これはログイン時のOTP検証用として残す
     PlanSettingsAPIView,
     ProfileSettingsAPIView,
     DeleteAccountAPIView,
@@ -17,6 +19,8 @@ from .views import (
 
 urlpatterns = [
     # --- サインアップフローのAPI ---
+    path('auth/csrf-token/', GetCSRFTokenView.as_view(), name='auth_get_csrf_token'),
+    path('auth/user-info/', UserInfoView.as_view(), name='auth_user_info'),  # ユーザー情報取得API
     path('auth/check-email/', CheckEmailAvailabilityAPIView.as_view(), name='auth_check_email'),
     path('auth/send-otp-signup/', SendOtpForSignupAPIView.as_view(), name='auth_send_otp_signup'),
     path('auth/verify-otp-signup/', VerifyOtpForSignupAPIView.as_view(), name='auth_verify_otp_signup'),
@@ -24,7 +28,7 @@ urlpatterns = [
 
     # --- ログインフローのAPI ---
     path('auth/login/', LoginAPIView.as_view(), name='auth_login'),
-    path('auth/verify-otp-login/', OTPVerifyAPIView.as_view(), name='auth_verify_otp_login'), # ログイン時のOTP検証
+    #path('auth/verify-otp-login/', OTPVerifyAPIView.as_view(), name='auth_verify_otp_login'), # ログイン時のOTP検証
 
     # --- ユーザー設定・管理API ---
     path('logout/', LogoutAPIView.as_view(), name='user_logout'),

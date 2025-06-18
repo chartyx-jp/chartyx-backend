@@ -141,6 +141,8 @@ class Authenticator:
             # 有効期限内であり、かつ `is_verified` が True であることを確認
             if time.time() <= stored_data.get('expires_at', 0) and stored_data.get('is_verified', False):
                 return stored_data.get('email')
+            else:
+                Authenticator.clear_signup_otp_session(session)  # 有効期限切れや未検証の場合はセッションをクリア
         return None
 
     @staticmethod

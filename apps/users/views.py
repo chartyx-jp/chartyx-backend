@@ -8,7 +8,7 @@ from .services.user_manager import UserManager
 from apps.users.services.authenticator import Authenticator 
 from django.db import IntegrityError
 from django.contrib.auth import login,logout
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from typing import Optional, Dict, Any, Tuple
 import logging
 import time 
@@ -21,10 +21,35 @@ from django.views.decorators.csrf import csrf_exempt
 logger = logging.getLogger(__name__)
 
 
+class GetCSRFTokenView(APIView):
+    permission_classes = [AllowAny] # このAPIは「ログイン（セッション認証）不要」で誰でもアクセス可能
+
+    def get(self, request, *args, **kwargs):
+        return Response({'csrfTokenをヘッダーにセットしました'},status = status.HTTP_200_OK)
+
+    
+class UserInfoView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        if not user:
+            logger.warning("ユーザー情報取得失敗: 認証されていません。")
+            return Response({'error': '認証されていません。再ログインしてください。'}, status=status.HTTP_401_UNAUTHORIZED)
+        return Response({
+            "id": user.id,
+            "emailAddress": user.emailAddress,
+            # その他必要な属性
+        },status=status.HTTP_200_OK)
+
+
+
 class CheckEmailAvailabilityAPIView(APIView):
     """
     メールアドレスが既に登録済みかを確認するAPIビュー。
     """
+    permission_classes = [AllowAny]
+    
     def get(self, request) -> Response:
         email_address: Optional[str] = request.query_params.get('emailAddress').strip() if request.query_params.get('emailAddress') else None
 
@@ -50,11 +75,13 @@ class CheckEmailAvailabilityAPIView(APIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
-class SendOtpForSignupAPIView(APIView):
+class SendOtpForSignupAPIView(APIView):    
     """
     新規登録のためにOTPを生成し、メールアドレスに送信するAPIビュー。
     未登録のメールアドレスにのみ送信を許可します。
     """
+    permission_classes = [AllowAny]
+
     
     def post(self, request) -> Response:
         email_address: Optional[str] = request.data.get('emailAddress')
@@ -98,11 +125,13 @@ class SendOtpForSignupAPIView(APIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
-class VerifyOtpForSignupAPIView(APIView):
+class VerifyOtpForSignupAPIView(APIView):    
     """
     新規登録のために送信されたOTPを検証するAPIビュー。
     成功した場合、セッションにメールアドレスが検証済みであることを記録します。
     """
+    permission_classes = [AllowAny]
+    
     def post(self, request) -> Response:
         email_address: Optional[str] = request.data.get('emailAddress') # フロントからメールアドレスも受け取る
         entered_otp: Optional[str] = request.data.get('otp')
@@ -139,6 +168,8 @@ class SignupAPIView(APIView):
     新規ユーザー登録のためのAPIビュー。
     このAPIを呼び出す前に、メールアドレスがOTP認証済みであることを前提とします。
     """
+    permission_classes = [AllowAny]
+    
     def post(self, request) -> Response:
         data: Dict[str, Any] = request.data
         
@@ -217,6 +248,7 @@ class LoginAPIView(APIView):
     """
     ユーザーログインと2段階認証 (OTP) の開始のためのAPIビュー。
     """
+    permission_classes = [AllowAny]
     
     def post(self, request) -> Response:
         data: Dict[str, Any] = request.data
@@ -252,6 +284,7 @@ class LoginAPIView(APIView):
                 login(request, member)  # Djangoのログイン処理を呼び出す これでUserインスタンスをSESSIONにセット
                 
                 user  = request.user                
+                logger.info(f"メンバーID {user.id} がログインしました。メールアドレス: {user.emailAddress}")
                 return Response({"message": "ログイン成功。2段階認証のOTPを送信しました。", "id": user.id},status=status.HTTP_202_ACCEPTED)
             else:
                 logger.warning(f"ログイン失敗: 無効な認証情報。メールアドレス: '{email}'")
@@ -268,74 +301,71 @@ class LoginAPIView(APIView):
 
 
 
-class OTPVerifyAPIView(APIView):
-    """
-    ログイン時の2段階認証 (OTP) の検証のためのAPIビュー。
-    """
-    def post(self, request) -> Response:
-        data: Dict[str, Any] = request.data
-        member_id: Optional[int] = request.session.get('member_id')
-        entered_otp: Optional[str] = data.get('otp')
+# class OTPVerifyAPIView(APIView):
+#     """
+#     ログイン時の2段階認証 (OTP) の検証のためのAPIビュー。
+#     """
+#     def post(self, request) -> Response:
+#         data: Dict[str, Any] = request.data
+#         member_id: Optional[int] = request.session.get('member_id')
+#         entered_otp: Optional[str] = data.get('otp')
 
-        if not member_id or not entered_otp:
-            logger.warning("OTP検証失敗 (ログイン): member_id または OTP が提供されていません。")
-            return Response(
-                {'error': 'メンバーIDとOTPは必須です。'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+#         if not member_id or not entered_otp:
+#             logger.warning("OTP検証失敗 (ログイン): member_id または OTP が提供されていません。")
+#             return Response(
+#                 {'error': 'メンバーIDとOTPは必須です。'},
+#                 status=status.HTTP_400_BAD_REQUEST
+#             )
         
-        try:
-            # ログイン時のOTP検証フローを呼び出す
-            session_key = f"{Authenticator.LOGIN_OTP_SESSION_KEY_PREFIX}{member_id}"
-            stored_data = request.session.get(session_key)
+#         try:
+#             # ログイン時のOTP検証フローを呼び出す
+#             session_key = f"{Authenticator.LOGIN_OTP_SESSION_KEY_PREFIX}{member_id}"
+#             stored_data = request.session.get(session_key)
 
-            if not stored_data:
-                logger.warning(f"OTP検証失敗 (ログイン): メンバーID {member_id} のOTPセッションデータが見つかりません。")
-                return Response({'error': '無効なOTP検証リクエストです。'}, status=status.HTTP_400_BAD_REQUEST)
+#             if not stored_data:
+#                 logger.warning(f"OTP検証失敗 (ログイン): メンバーID {member_id} のOTPセッションデータが見つかりません。")
+#                 return Response({'error': '無効なOTP検証リクエストです。'}, status=status.HTTP_400_BAD_REQUEST)
 
-            stored_otp = stored_data['otp']
-            expires_at = stored_data['expires_at']
+#             stored_otp = stored_data['otp']
+#             expires_at = stored_data['expires_at']
 
-            if time.time() > expires_at:
-                del request.session[session_key]
-                request.session.modified = True
-                logger.warning(f"OTP検証失敗 (ログイン): メンバーID {member_id} のOTPが有効期限切れです。")
-                return Response({'error': 'OTPの有効期限が切れました。再度ログインしてください。'}, status=status.HTTP_400_BAD_REQUEST)
+#             if time.time() > expires_at:
+#                 del request.session[session_key]
+#                 request.session.modified = True
+#                 logger.warning(f"OTP検証失敗 (ログイン): メンバーID {member_id} のOTPが有効期限切れです。")
+#                 return Response({'error': 'OTPの有効期限が切れました。再度ログインしてください。'}, status=status.HTTP_400_BAD_REQUEST)
 
-            if entered_otp == stored_otp:
-                del request.session[session_key] # 成功したらセッションから削除
-                request.session.modified = True
+#             if entered_otp == stored_otp:
+#                 del request.session[session_key] # 成功したらセッションから削除
+#                 request.session.modified = True
                 
-                # 認証成功の場合、実際のメンバー情報を取得し、セッションにmember_idを保存（最終ログイン）
-                # (OTPVerifyAPIViewがmember_idを受け取る前提なので、UserManager.get_member_by_idが必要)
-                member = UserManager.get_member_by_id(member_id) # UserManagerにget_member_by_idを追加している前提
-                if member:
-                    request.session['member_id'] = member_id # ユーザーIDをセッションに保存
-                    request.session.modified = True
-                    logger.info(f"メンバーID {member_id} のログイン用OTP認証が成功し、セッションに保存されました。")
-                    return Response({'message': 'ログイン成功'}, status=status.HTTP_200_OK)
-                else:
-                    logger.error(f"ログイン用OTP認証成功後、メンバーID '{member_id}' が見つかりません。データ不整合の可能性。")
-                    return Response({'error': '認証は成功しましたが、ユーザー情報が見つかりません。'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-            else:
-                logger.warning(f"メンバーID {member_id} のログイン用OTPが一致しません。")
-                return Response({'error': 'OTPが違います。'}, status=status.HTTP_400_BAD_REQUEST)
-        except Exception as e:
-            logger.exception(f"ログイン用OTP検証中に予期せぬエラーが発生しました。MemberID: {member_id}")
-            return Response(
-                {'error': f'OTP検証中に予期せぬエラーが発生しました。 ({e})'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+#                 # 認証成功の場合、実際のメンバー情報を取得し、セッションにmember_idを保存（最終ログイン）
+#                 # (OTPVerifyAPIViewがmember_idを受け取る前提なので、UserManager.get_member_by_idが必要)
+#                 member = UserManager.get_member_by_id(member_id) # UserManagerにget_member_by_idを追加している前提
+#                 if member:
+#                     request.session['member_id'] = member_id # ユーザーIDをセッションに保存
+#                     request.session.modified = True
+#                     logger.info(f"メンバーID {member_id} のログイン用OTP認証が成功し、セッションに保存されました。")
+#                     return Response({'message': 'ログイン成功'}, status=status.HTTP_200_OK)
+#                 else:
+#                     logger.error(f"ログイン用OTP認証成功後、メンバーID '{member_id}' が見つかりません。データ不整合の可能性。")
+#                     return Response({'error': '認証は成功しましたが、ユーザー情報が見つかりません。'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+#             else:
+#                 logger.warning(f"メンバーID {member_id} のログイン用OTPが一致しません。")
+#                 return Response({'error': 'OTPが違います。'}, status=status.HTTP_400_BAD_REQUEST)
+#         except Exception as e:
+#             logger.exception(f"ログイン用OTP検証中に予期せぬエラーが発生しました。MemberID: {member_id}")
+#             return Response(
+#                 {'error': f'OTP検証中に予期せぬエラーが発生しました。 ({e})'},
+#                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
+#             )
 
-
-# --- 既存API (Logout, PlanSettings, ProfileSettings, DeleteAccount は基本的に変更なし) ---
-# これらのAPIは、request.session.get('member_id') を使用して認証済みユーザーIDを取得するようにしてください。
-# ProfileSettingsAPIViewのgetメソッドにUserManager.get_member_by_idの利用を反映させます。
 
 class LogoutAPIView(APIView):
     """
     ユーザーのログアウトのためのAPIビュー。
     """
+    permission_classes = [IsAuthenticated]  # 認証済みユーザーのみがアクセス可能
     def post(self, request) -> Response:
         try:
             user = request.user
@@ -357,6 +387,7 @@ class PlanSettingsAPIView(APIView):
     """
     メンバーのプラン設定を更新するためのAPIビュー。
     """
+    permission_classes = [IsAuthenticated]  # 認証済みユーザーのみがアクセス可能
     def post(self, request) -> Response:
         # このAPIも認証済みユーザーのみが利用すべきなので、member_idはセッションから取得する
         current_member_id: Optional[int] = request.session.get('member_id')
@@ -403,6 +434,7 @@ class ProfileSettingsAPIView(APIView):
     ユーザーのプロフィール情報を取得・更新するためのAPIビュー。
     認証済みユーザーの情報をセッションIDに基づいて返します。
     """
+    permission_classes = [IsAuthenticated]  # 認証済みユーザーのみがアクセス可能
     def get(self, request) -> Response:
         # member_id はリクエストGETパラメータからではなく、セッションから取得する
         current_member_id: Optional[int] = request.session.get('member_id')

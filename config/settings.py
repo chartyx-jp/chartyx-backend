@@ -35,9 +35,11 @@ ALLOWED_HOSTS = ['*']
 
 # セッション設定
 SESSION_ENGINE = 'django.contrib.sessions.backends.db'  # サーバー側DB
-SESSION_COOKIE_HTTPONLY = True         # JSでアクセスできない
 CSRF_COOKIE_HTTPONLY = False # JSでアクセス可能（API連携のため）
-# SESSION_COOKIE_SECURE = True  # 本番HTTPSならTrue推奨
+CSRF_COOKIE_SAMESITE = 'None'
+SESSION_COOKIE_HTTPONLY = True         # JSでアクセスできない
+SESSION_COOKIE_SAMESITE = "None"
+SESSION_COOKIE_SECURE = False  # ローカル開発時のみ。HTTPSならTrue推奨
 
 # Application definition
 
@@ -77,7 +79,7 @@ MIDDLEWARE = [
 CORS_ALLOW_CREDENTIALS = True
 
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",  # 開発中フロント
+    "http://10.192.95.26:3000",  # 開発中フロント（IP指定）
     # "https://your-frontend.com",  # 本番フロント（将来追加）
 ]
 
@@ -221,9 +223,11 @@ NOTEBOOK_DIR = BASE_DIR / 'notebooks'
 REST_FRAMEWORK = {
     'DEFAULT_RENDERER_CLASSES': [
         'rest_framework.renderers.JSONRenderer',
-    ]
+    ],
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.SessionAuthentication',
+    ],
 }
-
 # mail設定
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 # ホスト
