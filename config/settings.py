@@ -79,7 +79,7 @@ MIDDLEWARE = [
 CORS_ALLOW_CREDENTIALS = True
 
 CORS_ALLOWED_ORIGINS = [
-    "http://10.192.95.26:3000",  # 開発中フロント（IP指定）
+    "http://localhost:3000",  # 開発中フロント（IP指定）
     # "https://your-frontend.com",  # 本番フロント（将来追加）
 ]
 

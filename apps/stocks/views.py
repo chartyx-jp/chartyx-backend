@@ -1,3 +1,4 @@
+from ast import Is
 from pathlib import Path
 from re import I
 from rest_framework.permissions import IsAuthenticated, AllowAny
@@ -41,7 +42,22 @@ class TickerListAPIView(APIView):
         
         return Response(tickers, status=status.HTTP_200_OK)
     
+class TickerSearchAPIView(APIView):
+    """
+    ティッカーコードの部分一致検索を行うAPIビュー。
+    """
+    permission_classes = [IsAuthenticated] 
     
+    def get(self, request):
+        query = request.query_params.get('query', '').strip().upper()
+        if not query:
+            return Response({'error': 'query parameter required'}, status=400)
+        
+        tickers = handler.search_tickers_by_ticker(query)
+        if not tickers:
+            return Response({'error': 'No matching tickers found'}, status=404)
+        
+        return Response(tickers, status=status.HTTP_200_OK)
 
         
         

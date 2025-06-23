@@ -1,5 +1,6 @@
 import os
 import sys
+import re
 import django
 import pandas as pd
 from typing import Any, List, Union
@@ -62,7 +63,6 @@ class Utils:
         Returns:
         - str: ファイル名に安全に使用できる形式の文字列
         """
-        import re
 
         # 不正な記号を除外（英数字、スペース、アンダースコア、ハイフンのみ許可）
         name = re.sub(r"[^\w\s-]", "", name)
@@ -75,3 +75,23 @@ class Utils:
 
         # 前後のアンダースコアを除去
         return name.strip("_")
+
+    @staticmethod
+    def squash_delimiters(name: str, delimiters: List[str] = ["-", "_"]) -> str:
+        """
+        指定したデリミタ（区切り文字）で文字列を分割し、全て結合して1語にする。
+
+        Parameters:
+        - name: 元の文字列
+        - delimiters: 区切りに使う文字列のリスト（例: ["-", "_"]）
+
+        Returns:
+        - str: 区切り記号を除去して全て結合した文字列
+        """
+        # デリミタでsplit → join
+        if delimiters:
+            pattern = '|'.join(map(re.escape, delimiters))
+            parts = re.split(pattern, name)
+            return ''.join(parts)
+        else:
+            return name
