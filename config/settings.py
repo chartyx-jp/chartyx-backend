@@ -35,10 +35,10 @@ ALLOWED_HOSTS = ['*']
 
 # セッション設定
 SESSION_ENGINE = 'django.contrib.sessions.backends.db'  # サーバー側DB
-CSRF_COOKIE_HTTPONLY = False # JSでアクセス可能（API連携のため）
-CSRF_COOKIE_SAMESITE = 'None'
+CSRF_COOKIE_HTTPONLY = True # JSでアクセス可能（API連携のため）
+CSRF_COOKIE_SAMESITE = 'LAX'
 SESSION_COOKIE_HTTPONLY = True         # JSでアクセスできない
-SESSION_COOKIE_SAMESITE = "None"
+SESSION_COOKIE_SAMESITE = "Lax"  # CSRF対策のため
 SESSION_COOKIE_SECURE = False  # ローカル開発時のみ。HTTPSならTrue推奨
 
 # Application definition
@@ -74,7 +74,15 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
+
+from corsheaders.defaults import default_headers
+
 # CORS_ALLOW_ALL_ORIGINS = True
+
+CORS_ALLOW_HEADERS = list(default_headers) + [
+    'emailAddress', 
+    'password', 
+    ]
 
 CORS_ALLOW_CREDENTIALS = True
 
