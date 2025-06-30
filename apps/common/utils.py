@@ -119,6 +119,6 @@ class Utils:
         if delimiters:
             pattern = '|'.join(map(re.escape, delimiters))
             parts = re.split(pattern, name)
-            return ''.join(parts)
+            return '　'.join(parts)
         else:
             return name
