@@ -1,0 +1,968 @@
+openapi: 3.0.3
+info:
+  title: Chartyx Backend API
+  description: |
+    Chartyx BackendのREST APIの完全なリファレンスです。
+    すべてのエンドポイント、リクエスト/レスポンス形式、認証要件について説明しています。
+    
+    ## 認証方式
+    - **セッション認証**: Django標準のセッション認証を使用
+    - **CSRF保護**: POST/PUT/DELETE リクエストにはCSRFトークンが必要
+    - **権限レベル**:
+      - `AllowAny`: 認証不要（パブリックAPI）
+      - `IsAuthenticated`: ログイン必須
+  version: v1.0.0
+  contact:
+    name: Chartyx Development Team
+    url: https://github.com/chartyx-jp/chartyx-backend
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:8000
+    description: Development server
+
+security:
+  - sessionAuth: []
+  - csrfToken: []
+
+paths:
+  # ユーザーAPI
+  /api/users/auth/csrf-token/:
+    get:
+      tags:
+        - Users
+      summary: CSRFトークン取得
+      description: CSRF保護のためのトークンを取得
+      security: []
+      responses:
+        '200':
+          description: CSRFトークン取得成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "csrfTokenをヘッダーにセットしました"
+
+  /api/users/auth/user-info/:
+    get:
+      tags:
+        - Users
+      summary: ユーザー情報取得
+      description: ログイン中のユーザー情報を取得
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: ユーザー情報取得成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    example: 1
+                  emailAddress:
+                    type: string
+                    format: email
+                    example: "user@example.com"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/users/auth/check-email/:
+    get:
+      tags:
+        - Users
+      summary: メールアドレス可用性確認
+      description: メールアドレスが既に登録済みかを確認
+      security: []
+      parameters:
+        - name: emailAddress
+          in: query
+          required: true
+          schema:
+            type: string
+            format: email
+          description: 確認するメールアドレス
+      responses:
+        '200':
+          description: 確認成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  exists:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: "このメールアドレスは利用可能です。"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/users/auth/send-otp-signup/:
+    post:
+      tags:
+        - Users
+      summary: サインアップ用OTP送信
+      description: 新規登録用のOTPをメールに送信
+      security:
+        - csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - emailAddress
+              properties:
+                emailAddress:
+                  type: string
+                  format: email
+                  example: "user@example.com"
+      responses:
+        '200':
+          description: OTP送信成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "認証コードを送信しました。メールをご確認ください。"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: 既に登録済みのメールアドレス
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/users/auth/verify-otp-signup/:
+    post:
+      tags:
+        - Users
+      summary: サインアップ用OTP検証
+      description: サインアップ用OTPを検証
+      security:
+        - csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - emailAddress
+                - otp
+              properties:
+                emailAddress:
+                  type: string
+                  format: email
+                  example: "user@example.com"
+                otp:
+                  type: string
+                  pattern: '^[0-9]{6}$'
+                  example: "123456"
+      responses:
+        '200':
+          description: OTP検証成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "認証が完了しました。サインアップを続行してください。"
+                  status:
+                    type: string
+                    example: "認証成功"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/users/auth/signup/:
+    post:
+      tags:
+        - Users
+      summary: サインアップ
+      description: 新規ユーザー登録（OTP検証済み前提）
+      security:
+        - csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignupRequest'
+      responses:
+        '201':
+          description: 登録成功
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          description: OTP認証未完了
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/users/auth/login/:
+    post:
+      tags:
+        - Users
+      summary: ログイン
+      description: ユーザーログイン
+      security:
+        - csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - emailAddress
+                - password
+              properties:
+                emailAddress:
+                  type: string
+                  format: email
+                  example: "user@example.com"
+                password:
+                  type: string
+                  format: password
+                  example: "securepassword123"
+      responses:
+        '202':
+          description: ログイン成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "ログイン成功。2段階認証のOTPを送信しました。"
+                  id:
+                    type: integer
+                    example: 1
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/users/logout/:
+    post:
+      tags:
+        - Users
+      summary: ログアウト
+      description: ユーザーログアウト
+      security:
+        - sessionAuth: []
+        - csrfToken: []
+      responses:
+        '200':
+          description: ログアウト成功
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/users/plan-settings/:
+    post:
+      tags:
+        - Users
+      summary: プラン設定更新
+      description: ユーザーのプラン設定を更新
+      security:
+        - sessionAuth: []
+        - csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - plan
+              properties:
+                plan:
+                  type: string
+                  enum: [basic, premium, enterprise]
+                  example: "premium"
+      responses:
+        '200':
+          description: 更新成功
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/users/profile-settings/:
+    get:
+      tags:
+        - Users
+      summary: プロフィール取得
+      description: ユーザーのプロフィール情報を取得
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: 取得成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  member:
+                    $ref: '#/components/schemas/UserProfile'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    post:
+      tags:
+        - Users
+      summary: プロフィール更新
+      description: ユーザーのプロフィール情報を更新
+      security:
+        - sessionAuth: []
+        - csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProfileUpdateRequest'
+      responses:
+        '200':
+          description: 更新成功
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/users/delete-account/:
+    delete:
+      tags:
+        - Users
+      summary: アカウント削除
+      description: ログイン中のユーザーアカウントを削除
+      security:
+        - sessionAuth: []
+        - csrfToken: []
+      responses:
+        '200':
+          description: 削除成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "アカウントを削除しました。"
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # 株式API
+  /api/stocks/ticker/:
+    get:
+      tags:
+        - Stocks
+      summary: ティッカーデータ取得
+      description: 指定されたティッカーコードの株価データを取得
+      security:
+        - sessionAuth: []
+      parameters:
+        - name: code
+          in: query
+          required: true
+          schema:
+            type: string
+          description: ティッカーコード（例："7203"）
+          example: "7203"
+      responses:
+        '200':
+          description: 取得成功
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StockData'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/stocks/tickers/:
+    get:
+      tags:
+        - Stocks
+      summary: ティッカー一覧取得
+      description: 利用可能な全ティッカーの一覧を取得
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: 取得成功
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+                example: ["7203", "6758", "8306", "9983"]
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/stocks/search/:
+    get:
+      tags:
+        - Stocks
+      summary: ティッカー検索
+      description: ティッカーコードの部分一致検索
+      security:
+        - sessionAuth: []
+      parameters:
+        - name: query
+          in: query
+          required: true
+          schema:
+            type: string
+          description: 検索クエリ（部分一致）
+          example: "720"
+      responses:
+        '200':
+          description: 検索成功
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+                example: ["7203", "7201"]
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # テクニカル指標API
+  /api/stocks/technical/sma/:
+    get:
+      tags:
+        - Technical Indicators
+      summary: 単純移動平均（SMA）
+      description: 指定されたティッカーの単純移動平均を計算
+      security:
+        - sessionAuth: []
+      parameters:
+        - name: code
+          in: query
+          required: true
+          schema:
+            type: string
+          description: ティッカーコード
+          example: "7203"
+        - name: period
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 20
+          description: 計算期間
+          example: 20
+      responses:
+        '200':
+          description: 計算成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TechnicalIndicatorResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/stocks/technical/ema/:
+    get:
+      tags:
+        - Technical Indicators
+      summary: 指数移動平均（EMA）
+      description: 指定されたティッカーの指数移動平均を計算
+      security:
+        - sessionAuth: []
+      parameters:
+        - name: code
+          in: query
+          required: true
+          schema:
+            type: string
+          description: ティッカーコード
+          example: "7203"
+        - name: period
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 12
+          description: 計算期間
+          example: 12
+      responses:
+        '200':
+          description: 計算成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TechnicalIndicatorResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/stocks/technical/rsi/:
+    get:
+      tags:
+        - Technical Indicators
+      summary: RSI（相対力指数）
+      description: 指定されたティッカーのRSIを計算
+      security:
+        - sessionAuth: []
+      parameters:
+        - name: code
+          in: query
+          required: true
+          schema:
+            type: string
+          description: ティッカーコード
+          example: "7203"
+        - name: period
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 14
+          description: 計算期間
+          example: 14
+      responses:
+        '200':
+          description: 計算成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TechnicalIndicatorResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/stocks/technical/macd/:
+    get:
+      tags:
+        - Technical Indicators
+      summary: MACD
+      description: 指定されたティッカーのMACDを計算
+      security:
+        - sessionAuth: []
+      parameters:
+        - name: code
+          in: query
+          required: true
+          schema:
+            type: string
+          description: ティッカーコード
+          example: "7203"
+        - name: fast
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 12
+          description: 短期EMA期間
+          example: 12
+        - name: slow
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 26
+          description: 長期EMA期間
+          example: 26
+        - name: signal
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 9
+          description: シグナル線期間
+          example: 9
+      responses:
+        '200':
+          description: 計算成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ticker:
+                    type: string
+                    example: "7203"
+                  indicator:
+                    type: string
+                    example: "macd"
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        date:
+                          type: string
+                          format: date
+                          example: "2024-01-01"
+                        value:
+                          type: object
+                          properties:
+                            macd:
+                              type: number
+                              format: float
+                              example: 12.34
+                            signal:
+                              type: number
+                              format: float
+                              example: 10.56
+                            histogram:
+                              type: number
+                              format: float
+                              example: 1.78
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/stocks/technical/bollinger/:
+    get:
+      tags:
+        - Technical Indicators
+      summary: ボリンジャーバンド
+      description: 指定されたティッカーのボリンジャーバンドを計算
+      security:
+        - sessionAuth: []
+      parameters:
+        - name: code
+          in: query
+          required: true
+          schema:
+            type: string
+          description: ティッカーコード
+          example: "7203"
+        - name: period
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 20
+          description: 計算期間
+          example: 20
+        - name: std_dev
+          in: query
+          required: false
+          schema:
+            type: number
+            format: float
+            minimum: 0.1
+            default: 2.0
+          description: 標準偏差の倍数
+          example: 2.0
+      responses:
+        '200':
+          description: 計算成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ticker:
+                    type: string
+                    example: "7203"
+                  indicator:
+                    type: string
+                    example: "bollinger"
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        date:
+                          type: string
+                          format: date
+                          example: "2024-01-01"
+                        value:
+                          type: object
+                          properties:
+                            middle:
+                              type: number
+                              format: float
+                              example: 2500.0
+                            upper:
+                              type: number
+                              format: float
+                              example: 2600.0
+                            lower:
+                              type: number
+                              format: float
+                              example: 2400.0
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+components:
+  securitySchemes:
+    sessionAuth:
+      type: apiKey
+      in: cookie
+      name: sessionid
+      description: Django session authentication
+    csrfToken:
+      type: apiKey
+      in: header
+      name: X-CSRFToken
+      description: CSRF protection token
+
+  schemas:
+    SignupRequest:
+      type: object
+      required:
+        - password
+        - firstName
+        - lastName
+        - gender
+        - birthday
+        - phoneNumber
+        - address
+      properties:
+        password:
+          type: string
+          format: password
+          minLength: 8
+          example: "securepassword123"
+        firstName:
+          type: string
+          maxLength: 50
+          example: "太郎"
+        lastName:
+          type: string
+          maxLength: 50
+          example: "田中"
+        gender:
+          type: string
+          enum: [male, female, other]
+          example: "male"
+        birthday:
+          type: string
+          format: date
+          example: "1990-01-01"
+        phoneNumber:
+          type: string
+          pattern: '^[0-9-]+$'
+          example: "090-1234-5678"
+        address:
+          type: string
+          maxLength: 200
+          example: "東京都渋谷区"
+
+    UserProfile:
+      type: object
+      properties:
+        firstName:
+          type: string
+          example: "太郎"
+        lastName:
+          type: string
+          example: "田中"
+        gender:
+          type: string
+          enum: [male, female, other]
+          example: "male"
+        birthday:
+          type: string
+          format: date
+          example: "1990-01-01"
+        emailAddress:
+          type: string
+          format: email
+          example: "user@example.com"
+        phoneNumber:
+          type: string
+          example: "090-1234-5678"
+        address:
+          type: string
+          example: "東京都渋谷区"
+
+    ProfileUpdateRequest:
+      type: object
+      properties:
+        firstName:
+          type: string
+          maxLength: 50
+          example: "次郎"
+        lastName:
+          type: string
+          maxLength: 50
+          example: "佐藤"
+        gender:
+          type: string
+          enum: [male, female, other]
+          example: "male"
+        birthday:
+          type: string
+          format: date
+          example: "1985-05-15"
+        phoneNumber:
+          type: string
+          pattern: '^[0-9-]+$'
+          example: "080-9876-5432"
+        address:
+          type: string
+          maxLength: 200
+          example: "大阪府大阪市"
+        emailAddress:
+          type: string
+          format: email
+          example: "newuser@example.com"
+        password:
+          type: string
+          format: password
+          minLength: 8
+          example: "newpassword123"
+
+    StockData:
+      type: object
+      properties:
+        Date:
+          type: string
+          format: date
+          example: "2024-01-01"
+        Open:
+          type: number
+          format: float
+          example: 2500.0
+        High:
+          type: number
+          format: float
+          example: 2550.0
+        Low:
+          type: number
+          format: float
+          example: 2480.0
+        Close:
+          type: number
+          format: float
+          example: 2520.0
+        Volume:
+          type: integer
+          example: 1000000
+
+    TechnicalIndicatorResponse:
+      type: object
+      properties:
+        ticker:
+          type: string
+          example: "7203"
+        indicator:
+          type: string
+          example: "sma"
+        data:
+          type: array
+          items:
+            type: object
+            properties:
+              date:
+                type: string
+                format: date
+                example: "2024-01-01"
+              value:
+                type: number
+                format: float
+                example: 2500.0
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "エラーメッセージ"
+
+  responses:
+    BadRequest:
+      description: リクエストパラメータエラー
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    Unauthorized:
+      description: 認証が必要
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    NotFound:
+      description: リソースが見つからない
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    InternalServerError:
+      description: サーバー内部エラー
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+tags:
+  - name: Users
+    description: ユーザー認証・管理API
+  - name: Stocks
+    description: 株式データAPI
+  - name: Technical Indicators
+    description: テクニカル指標API

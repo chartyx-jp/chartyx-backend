@@ -1,0 +1,17 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Django Server",
+			"type": "shell",
+			"command": "C:/HAL/Chartyx/chartyx-backend/venv/Scripts/python.exe",
+			"args": [
+				"manage.py",
+				"runserver"
+			],
+			"group": "build",
+			"isBackground": true,
+			"problemMatcher": []
+		}
+	]
+}

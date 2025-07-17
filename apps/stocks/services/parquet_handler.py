@@ -1,5 +1,6 @@
 import shutil
 import pandas as pd
+import numpy as np
 from pathlib import Path
 from apps.common.utils import Utils
 from tqdm import tqdm
@@ -83,7 +84,7 @@ class ParquetHandler(DjangoAppInitializer):
             deleted = 0
 
             for file in self.__all_files:
-                if file.is_file() and file.suffix(suffix):
+                if file.is_file() and file.name.endswith(suffix):
                     try:
                         file.unlink()  # ← Pathオブジェクトの削除メソッド
                         deleted += 1
@@ -266,41 +267,334 @@ class ParquetHandler(DjangoAppInitializer):
         """
         
         if ticker_base:
-            source_path:Optional[Path] = self.get_file_by_ticker(ticker_base)  # ← Path を返す前提
+            source_path: Optional[Path] = self.get_file_by_ticker(ticker_base)
+            if source_path is None:
+                self.log.error(f"ティッカーファイルが見つかりません: {ticker_base}")
+                return
             print(f"source_path: {source_path}")
         else:
             source_path = self.__directory
+        
         target_dir = Path(target_dir)
         target_dir.mkdir(parents=True, exist_ok=True)
 
         target_path = target_dir / source_path.name
         shutil.copy2(source_path, target_path)
 
-    # def calc_flat_target_ratio(self, threshold: float = 1e-4) -> float:
+    # テクニカル指標計算メソッド
+    def calculate_sma(self, ticker_base: str, period: int = 20) -> dict:
         """
-        Target列の変動が閾値以下の行が、全行のうち何％あるかを返す。
-
+        単純移動平均（SMA）を計算する
+        
         Parameters:
-        - threshold: 絶対値でこの値以下のTargetを「変動なし」と見なす
-
+        - ticker_base: 銘柄コード
+        - period: 計算期間（デフォルト: 20）
+        
         Returns:
-        - flat_ratio: 全体に対する「ほぼ変動なし」行の割合（0〜1）
+        - dict: レスポンス形式のデータ
         """
-        total_rows = 0
-        flat_rows = 0
+        try:
+            # データファイルを取得
+            parquet_file = self.get_file_by_ticker(ticker_base)
+            if not parquet_file:
+                return {'error': f'ticker {ticker_base} not found'}
+            
+            # データを読み込み
+            df = self.load(parquet_file)
+            
+            # 必要な列が存在するかチェック
+            if 'Close' not in df.columns or 'Date' not in df.columns:
+                return {'error': 'Required columns (Close, Date) not found'}
+            
+            # データが十分にあるかチェック
+            if len(df) < period:
+                return {'error': f'Insufficient data. Need at least {period} records, got {len(df)}'}
+            
+            # 日付でソート
+            df = df.sort_values('Date').reset_index(drop=True)
+            
+            # SMA計算
+            df['sma'] = df['Close'].rolling(window=period).mean()
+            
+            # NaNを除去
+            df_result = df.dropna(subset=['sma'])
+            
+            # レスポンス形式に変換
+            data = []
+            for _, row in df_result.iterrows():
+                data.append({
+                    'date': Utils.unix_to_datestr(row['Date']) if isinstance(row['Date'], (int, float)) else str(row['Date']),
+                    'value': float(row['sma'])
+                })
+            
+            return {
+                'ticker': ticker_base,
+                'indicator': 'sma',
+                'data': data
+            }
+            
+        except Exception as e:
+            self.log.error(f"SMA計算エラー: {e}")
+            return {'error': f'Calculation failed: {str(e)}'}
 
-        for f in tqdm(self.__all_files, desc="Reransforming files"):
-            df = self.load(f)
+    def calculate_ema(self, ticker_base: str, period: int = 12) -> dict:
+        """
+        指数移動平均（EMA）を計算する
+        
+        Parameters:
+        - ticker_base: 銘柄コード
+        - period: 計算期間（デフォルト: 12）
+        
+        Returns:
+        - dict: レスポンス形式のデータ
+        """
+        try:
+            # データファイルを取得
+            parquet_file = self.get_file_by_ticker(ticker_base)
+            if not parquet_file:
+                return {'error': f'ticker {ticker_base} not found'}
+            
+            # データを読み込み
+            df = self.load(parquet_file)
+            
+            # 必要な列が存在するかチェック
+            if 'Close' not in df.columns or 'Date' not in df.columns:
+                return {'error': 'Required columns (Close, Date) not found'}
+            
+            # データが十分にあるかチェック
+            if len(df) < period:
+                return {'error': f'Insufficient data. Need at least {period} records, got {len(df)}'}
+            
+            # 日付でソート
+            df = df.sort_values('Date').reset_index(drop=True)
+            
+            # EMA計算
+            df['ema'] = df['Close'].ewm(span=period).mean()
+            
+            # NaNを除去
+            df_result = df.dropna(subset=['ema'])
+            
+            # レスポンス形式に変換
+            data = []
+            for _, row in df_result.iterrows():
+                data.append({
+                    'date': Utils.unix_to_datestr(row['Date']) if isinstance(row['Date'], (int, float)) else str(row['Date']),
+                    'value': float(row['ema'])
+                })
+            
+            return {
+                'ticker': ticker_base,
+                'indicator': 'ema',
+                'data': data
+            }
+            
+        except Exception as e:
+            self.log.error(f"EMA計算エラー: {e}")
+            return {'error': f'Calculation failed: {str(e)}'}
 
-            if "Target" not in df.columns:
-                self.log.info(f"Target列が見つかりません: {f}")
-                continue  # Target列がない場合はスキップ
+    def calculate_rsi(self, ticker_base: str, period: int = 14) -> dict:
+        """
+        RSI（Relative Strength Index）を計算する
+        
+        Parameters:
+        - ticker_base: 銘柄コード
+        - period: 計算期間（デフォルト: 14）
+        
+        Returns:
+        - dict: レスポンス形式のデータ
+        """
+        try:
+            # データファイルを取得
+            parquet_file = self.get_file_by_ticker(ticker_base)
+            if not parquet_file:
+                return {'error': f'ticker {ticker_base} not found'}
+            
+            # データを読み込み
+            df = self.load(parquet_file)
+            
+            # 必要な列が存在するかチェック
+            if 'Close' not in df.columns or 'Date' not in df.columns:
+                return {'error': 'Required columns (Close, Date) not found'}
+            
+            # データが十分にあるかチェック
+            if len(df) < period + 1:
+                return {'error': f'Insufficient data. Need at least {period + 1} records, got {len(df)}'}
+            
+            # 日付でソート
+            df = df.sort_values('Date').reset_index(drop=True)
+            
+            # 価格変化を計算
+            df['price_change'] = df['Close'].diff()
+            
+            # 上昇と下降を分離
+            df['gain'] = np.where(df['price_change'] > 0, df['price_change'], 0)
+            df['loss'] = np.where(df['price_change'] < 0, -df['price_change'], 0)
+            
+            # 平均利得と平均損失を計算
+            df['avg_gain'] = df['gain'].rolling(window=period).mean()
+            df['avg_loss'] = df['loss'].rolling(window=period).mean()
+            
+            # RSを計算
+            df['rs'] = df['avg_gain'] / df['avg_loss']
+            
+            # RSIを計算
+            df['rsi'] = 100 - (100 / (1 + df['rs']))
+            
+            # NaNを除去
+            df_result = df.dropna(subset=['rsi'])
+            
+            # レスポンス形式に変換
+            data = []
+            for _, row in df_result.iterrows():
+                data.append({
+                    'date': Utils.unix_to_datestr(row['Date']) if isinstance(row['Date'], (int, float)) else str(row['Date']),
+                    'value': float(row['rsi'])
+                })
+            
+            return {
+                'ticker': ticker_base,
+                'indicator': 'rsi',
+                'data': data
+            }
+            
+        except Exception as e:
+            self.log.error(f"RSI計算エラー: {e}")
+            return {'error': f'Calculation failed: {str(e)}'}
 
-            df = df.dropna(subset=["Target"])  # 欠損値は除外
-            total_rows += len(df)
-            flat_rows += (df["Target"].abs() <= threshold).sum()
+    def calculate_macd(self, ticker_base: str, fast: int = 12, slow: int = 26, signal: int = 9) -> dict:
+        """
+        MACD（Moving Average Convergence Divergence）を計算する
+        
+        Parameters:
+        - ticker_base: 銘柄コード
+        - fast: 短期EMA期間（デフォルト: 12）
+        - slow: 長期EMA期間（デフォルト: 26）
+        - signal: シグナル線期間（デフォルト: 9）
+        
+        Returns:
+        - dict: レスポンス形式のデータ
+        """
+        try:
+            # データファイルを取得
+            parquet_file = self.get_file_by_ticker(ticker_base)
+            if not parquet_file:
+                return {'error': f'ticker {ticker_base} not found'}
+            
+            # データを読み込み
+            df = self.load(parquet_file)
+            
+            # 必要な列が存在するかチェック
+            if 'Close' not in df.columns or 'Date' not in df.columns:
+                return {'error': 'Required columns (Close, Date) not found'}
+            
+            # データが十分にあるかチェック
+            if len(df) < slow + signal:
+                return {'error': f'Insufficient data. Need at least {slow + signal} records, got {len(df)}'}
+            
+            # 日付でソート
+            df = df.sort_values('Date').reset_index(drop=True)
+            
+            # EMAを計算
+            df['ema_fast'] = df['Close'].ewm(span=fast).mean()
+            df['ema_slow'] = df['Close'].ewm(span=slow).mean()
+            
+            # MACDラインを計算
+            df['macd'] = df['ema_fast'] - df['ema_slow']
+            
+            # シグナルラインを計算
+            df['signal'] = df['macd'].ewm(span=signal).mean()
+            
+            # ヒストグラムを計算
+            df['histogram'] = df['macd'] - df['signal']
+            
+            # NaNを除去
+            df_result = df.dropna(subset=['macd', 'signal', 'histogram'])
+            
+            # レスポンス形式に変換
+            data = []
+            for _, row in df_result.iterrows():
+                data.append({
+                    'date': Utils.unix_to_datestr(row['Date']) if isinstance(row['Date'], (int, float)) else str(row['Date']),
+                    'value': {
+                        'macd': float(row['macd']),
+                        'signal': float(row['signal']),
+                        'histogram': float(row['histogram'])
+                    }
+                })
+            
+            return {
+                'ticker': ticker_base,
+                'indicator': 'macd',
+                'data': data
+            }
+            
+        except Exception as e:
+            self.log.error(f"MACD計算エラー: {e}")
+            return {'error': f'Calculation failed: {str(e)}'}
 
-        if total_rows == 0:
-            return 0.0
-
-        return flat_rows / total_rows
+    def calculate_bollinger_bands(self, ticker_base: str, period: int = 20, std_dev: float = 2.0) -> dict:
+        """
+        ボリンジャーバンドを計算する
+        
+        Parameters:
+        - ticker_base: 銘柄コード
+        - period: 計算期間（デフォルト: 20）
+        - std_dev: 標準偏差の倍数（デフォルト: 2.0）
+        
+        Returns:
+        - dict: レスポンス形式のデータ
+        """
+        try:
+            # データファイルを取得
+            parquet_file = self.get_file_by_ticker(ticker_base)
+            if not parquet_file:
+                return {'error': f'ticker {ticker_base} not found'}
+            
+            # データを読み込み
+            df = self.load(parquet_file)
+            
+            # 必要な列が存在するかチェック
+            if 'Close' not in df.columns or 'Date' not in df.columns:
+                return {'error': 'Required columns (Close, Date) not found'}
+            
+            # データが十分にあるかチェック
+            if len(df) < period:
+                return {'error': f'Insufficient data. Need at least {period} records, got {len(df)}'}
+            
+            # 日付でソート
+            df = df.sort_values('Date').reset_index(drop=True)
+            
+            # 移動平均を計算
+            df['sma'] = df['Close'].rolling(window=period).mean()
+            
+            # 標準偏差を計算
+            df['std'] = df['Close'].rolling(window=period).std()
+            
+            # ボリンジャーバンドを計算
+            df['upper_band'] = df['sma'] + (df['std'] * std_dev)
+            df['lower_band'] = df['sma'] - (df['std'] * std_dev)
+            
+            # NaNを除去
+            df_result = df.dropna(subset=['sma', 'upper_band', 'lower_band'])
+            
+            # レスポンス形式に変換
+            data = []
+            for _, row in df_result.iterrows():
+                data.append({
+                    'date': Utils.unix_to_datestr(row['Date']) if isinstance(row['Date'], (int, float)) else str(row['Date']),
+                    'value': {
+                        'middle': float(row['sma']),
+                        'upper': float(row['upper_band']),
+                        'lower': float(row['lower_band'])
+                    }
+                })
+            
+            return {
+                'ticker': ticker_base,
+                'indicator': 'bollinger',
+                'data': data
+            }
+            
+        except Exception as e:
+            self.log.error(f"ボリンジャーバンド計算エラー: {e}")
+            return {'error': f'Calculation failed: {str(e)}'}
