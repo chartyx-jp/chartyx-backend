@@ -8,7 +8,7 @@ from apps.common.app_initializer import DjangoAppInitializer
 from apps.stocks.services.parquet_handler import ParquetHandler
 from apps.ai.features.base_v2 import BasicFeatureGeneratorV2
 from apps.common.utils import Utils
-from typing import Union, List, Dict
+from typing import Optional, Union, List, Dict
 from django.conf import settings
 
 class YahooFetcher(DjangoAppInitializer):
@@ -50,7 +50,7 @@ class YahooFetcher(DjangoAppInitializer):
         self.__raw_columns = ["Date"] + self.__price_columns
         self.__parquet_handler = ParquetHandler(directory=directory, batch_size=20)
 
-    def fetch(self,tickers: list[str] = None) -> pd.DataFrame:
+    def fetch(self,tickers: list[str]) -> Optional[pd.DataFrame]:
         """
         指定ティッカーの当日株価（終値）をyfinanceで取得。
 
@@ -146,7 +146,7 @@ class YahooFetcher(DjangoAppInitializer):
             self.log.info(f" 取得完了: {country} - {len(tickers_list)} 銘柄")
             for ticker in tqdm(tickers_list, desc=f"{country}のデータをアップデートしています。"):
                 try:
-                    parquet_path:Path = self.__parquet_handler.get_file_by_ticker(ticker)
+                    parquet_path:Optional[Path] = self.__parquet_handler.get_file_by_ticker(ticker)
 
                     if not parquet_path:
                         self.log.warning(f"{ticker}のファイルが見つかりません。スキップ。")

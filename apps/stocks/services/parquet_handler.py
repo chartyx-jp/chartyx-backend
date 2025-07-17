@@ -86,7 +86,7 @@ class ParquetHandler(DjangoAppInitializer):
             for file in self.__all_files:
                 if file.is_file() and file.name.endswith(suffix):
                     try:
-                        file.unlink()  # ← Pathオブジェクトの削除メソッド
+                        file.unlink()
                         deleted += 1
                         self.log.info(f" 削除: {file.name}")
                     except Exception as e:
@@ -172,7 +172,10 @@ class ParquetHandler(DjangoAppInitializer):
 
         return pd.concat(all_dfs, ignore_index=True)
     
-    def retransform_all_files(self, column:List[str]=None ,generator:Generator=None,handler:"ParquetHandler"=None, google_drive:bool=False) -> None:
+    def retransform_all_files(self, column:Optional[List[str]]=None ,
+                            generator:Optional[Generator]=None,
+                            handler:Optional["ParquetHandler"]=None, 
+                            google_drive:bool=False)-> None:
         """
         既存のparquetファイルをすべて読み込み、
         transformを通して再加工し、上書き保存する
@@ -257,7 +260,7 @@ class ParquetHandler(DjangoAppInitializer):
         else:
             return df_sorted.iloc[-n]  # 最終行（最新日）
         
-    def copy_tickerFile_to(self, target_dir: Path, ticker_base: str = None) -> None:
+    def copy_tickerFile_to(self, target_dir: Path, ticker_base: Optional[str] = None) -> None:
         """
         指定されたティッカーファイルをターゲットディレクトリにコピーする。
 
@@ -280,6 +283,35 @@ class ParquetHandler(DjangoAppInitializer):
 
         target_path = target_dir / source_path.name
         shutil.copy2(source_path, target_path)
+        
+    
+    def get_all_tickers(self) -> List[str]:
+        """
+        ディレクトリ内のすべてのティッカーを取得する。
+        ファイル名からティッカー部分を抽出してリストで返す。
+
+        Returns:
+        - List[str]: ティッカーのリスト
+        """
+        tickers = []
+        for file in self.__all_files:
+            if file.is_file() and file.suffix == ".parquet":
+                ticker = file.stem.split("_")[0]
+                tickers.append(ticker)
+        return sorted(set(tickers))
+    
+    def search_tickers_by_ticker(self, query: str) -> List[str]:
+        """
+        ティッカーの部分一致検索を行う。
+
+        Parameters:
+        - query: 検索クエリ（大文字小文字は区別しない）
+
+        Returns:
+        - List[str]: 一致するティッカーのリスト
+        """
+        query = query.strip().upper()
+        return [Utils.squash_delimiters(file.stem.split("_")[1]) for file in self.__all_files if query in file.stem.split("_")[0].upper()]
 
     # テクニカル指標計算メソッド
     def calculate_sma(self, ticker_base: str, period: int = 20) -> dict:

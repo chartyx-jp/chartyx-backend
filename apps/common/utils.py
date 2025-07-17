@@ -1,3 +1,4 @@
+import re
 import django
 import pandas as pd
 from apps.common.app_initializer import DjangoAppInitializer as Initializer
@@ -59,7 +60,6 @@ class Utils:
         Returns:
         - str: ファイル名に安全に使用できる形式の文字列
         """
-        import re
         # 改行、スラッシュ、をアンダースコアに変換
         name = name.replace("\n", "_").replace("/", "_")
 
@@ -81,8 +81,6 @@ class Utils:
 
     @staticmethod
     def sanitize_ticker_for_filename(ticker: str) -> str:
-        import re
-
         # .+アルファベット（例: .T, .NS）を末尾から除去
         ticker = re.sub(r"\.[A-Za-z]+$", "", ticker)
 
@@ -94,7 +92,6 @@ class Utils:
 
     @staticmethod
     def normalize_for_search(name: str) -> str:
-        import re
         # アルファベット、数字、日本語だけ残して、小文字に統一
         name = re.sub(r"[^\w\u3000-\u30FF\u4E00-\u9FFF]", "", name)
         return name.lower()
@@ -105,3 +102,23 @@ class Utils:
         UNIXタイムスタンプを日付文字列に変換する。
         """
         return pd.to_datetime(series, unit='ms').dt.strftime('%Y/%m/%d')
+    
+    @staticmethod
+    def squash_delimiters(name: str, delimiters: List[str] = ["-", "_"]) -> str:
+        """
+        指定したデリミタ（区切り文字）で文字列を分割し、全て結合して1語にする。
+
+        Parameters:
+        - name: 元の文字列
+        - delimiters: 区切りに使う文字列のリスト（例: ["-", "_"]）
+
+        Returns:
+        - str: 区切り記号を除去して全て結合した文字列
+        """
+        # デリミタでsplit → join
+        if delimiters:
+            pattern = '|'.join(map(re.escape, delimiters))
+            parts = re.split(pattern, name)
+            return '　'.join(parts)
+        else:
+            return name

@@ -1,17 +1,40 @@
-from django.urls import path, include
-from . import views
+# apps/users/urls.py (またはプロジェクト全体のurls.pyでincludeする場合)
 
-#会員登録、ログイン、ログアウト、OPT入力、プラン変更、ユーザー情報変更、アカウント削除、パスワード忘れ
+from django.urls import path
+from apps.users.views import (
+    GetCSRFTokenView,
+    UserInfoView,
+    SignupAPIView,
+    LoginAPIView,
+    LogoutAPIView,
+    #OTPVerifyAPIView, # これはログイン時のOTP検証用として残す
+    PlanSettingsAPIView,
+    ProfileSettingsAPIView,
+    DeleteAccountAPIView,
+    CheckEmailAvailabilityAPIView,
+    SendOtpForSignupAPIView,
+    VerifyOtpForSignupAPIView,
+    # ForgotPasswordAPIView, # 実装済みなら
+)
+
 urlpatterns = [
-    path('signup', views.signup, name='signup'),
-    path('login', views.login, name='login'),
-    path('logout', views.logout, name='logout'),
-    path('sendAuthCodeEmail', views.sendAuthCodeEmail, name='sendAuthCodeEmail'),
-    # path('verify-otp', views.verifyOTP, name='verifyOTP'),
-    path('planSettings', views.planSettings, name='planSettings'),
-    path('profileSettings', views.profileSettings, name='profileSettings'),
-    path('deleteAccount', views.deleteAccount, name='deleteAccount'),
-    # path('forgotPassword', views.forgotPassword, name='forgotPassword'),
+    # --- サインアップフローのAPI ---
+    path('auth/csrf-token/', GetCSRFTokenView.as_view(), name='auth_get_csrf_token'),
+    path('auth/user-info/', UserInfoView.as_view(), name='auth_user_info'),  # ユーザー情報取得API
+    path('auth/check-email/', CheckEmailAvailabilityAPIView.as_view(), name='auth_check_email'),
+    path('auth/send-otp-signup/', SendOtpForSignupAPIView.as_view(), name='auth_send_otp_signup'),
+    path('auth/verify-otp-signup/', VerifyOtpForSignupAPIView.as_view(), name='auth_verify_otp_signup'),
+    path('auth/signup/', SignupAPIView.as_view(), name='auth_signup'), # 最終的なサインアップ
+
+    # --- ログインフローのAPI ---
+    path('auth/login/', LoginAPIView.as_view(), name='auth_login'),
+    #path('auth/verify-otp-login/', OTPVerifyAPIView.as_view(), name='auth_verify_otp_login'), # ログイン時のOTP検証
+
+    # --- ユーザー設定・管理API ---
+    path('logout/', LogoutAPIView.as_view(), name='user_logout'),
+    path('plan-settings/', PlanSettingsAPIView.as_view(), name='user_plan_settings'),
+    path('profile-settings/', ProfileSettingsAPIView.as_view(), name='user_profile_settings'),
+    path('delete-account/', DeleteAccountAPIView.as_view(), name='user_delete_account'),
+
+    # path('auth/forgot-password/', ForgotPasswordAPIView.as_view(), name='auth_forgot_password'), # パスワード忘れAPI
 ]
-
-

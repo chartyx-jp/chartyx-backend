@@ -33,7 +33,13 @@ DEBUG = True
 ALLOWED_HOSTS = ['*']    
 # テスト用途なら ['*'] でも通ります（本番では×）
 
-
+# セッション設定
+SESSION_ENGINE = 'django.contrib.sessions.backends.db'  # サーバー側DB
+CSRF_COOKIE_HTTPONLY = True # JSでアクセス可能（API連携のため）
+CSRF_COOKIE_SAMESITE = 'LAX'
+SESSION_COOKIE_HTTPONLY = True         # JSでアクセスできない
+SESSION_COOKIE_SAMESITE = "Lax"  # CSRF対策のため
+SESSION_COOKIE_SECURE = False  # ローカル開発時のみ。HTTPSならTrue推奨
 
 # Application definition
 
@@ -44,6 +50,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    "rest_framework",
     'corsheaders',
 
     # 自作アプリ（apps/配下）
@@ -57,6 +64,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware', 
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -64,15 +72,22 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    'corsheaders.middleware.CorsMiddleware',
 ]
 
+
+from corsheaders.defaults import default_headers
+
 # CORS_ALLOW_ALL_ORIGINS = True
+
+CORS_ALLOW_HEADERS = list(default_headers) + [
+    'emailAddress', 
+    'password', 
+    ]
 
 CORS_ALLOW_CREDENTIALS = True
 
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",  # 開発中フロント
+    "http://localhost:3000",  # 開発中フロント（IP指定）
     # "https://your-frontend.com",  # 本番フロント（将来追加）
 ]
 
@@ -107,6 +122,7 @@ DATABASES = {
     }
 }
 
+AUTH_USER_MODEL = 'users.Member'  # カスタムユーザーモデルを指定
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
@@ -132,7 +148,7 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'ja'
 
-TIME_ZONE = 'asia/tokyo'
+TIME_ZONE = 'Asia/Tokyo'
 
 USE_I18N = True
 
@@ -215,9 +231,11 @@ NOTEBOOK_DIR = BASE_DIR / 'notebooks'
 REST_FRAMEWORK = {
     'DEFAULT_RENDERER_CLASSES': [
         'rest_framework.renderers.JSONRenderer',
-    ]
+    ],
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.SessionAuthentication',
+    ],
 }
-
 # mail設定
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 # ホスト
